@@ -11,7 +11,9 @@
     "start": "next start -p 3000",
     "export": "next export",
     "lint": "next lint",
-    "lint-fix": "next lint --fix"
+    "lint-fix": "next lint --fix",
+    "test:workspace": "node tests/workspace.e2e.cjs",
+    "test:connected": "node tests/connected.e2e.cjs"
   },
   "dependencies": {
     "20": "^3.1.9",
@@ -45,7 +47,7 @@
     "lucide-react": "^0.511.0",
     "moment": "^2.30.1",
     "moment-timezone": "^0.5.47",
-    "next": "14.0.4",
+    "next": "14.2.35",
     "nprogress": "0.2.0",
     "pdfjs-dist": "^4.0.379",
     "prop-types": "15.8.1",
@@ -73,7 +75,8 @@
     "@types/numeral": "2.0.5",
     "@types/react": "18.2.43",
     "@types/react-dom": "18.2.17",
-    "eslint": "8.55.0",
-    "eslint-config-next": "14.0.4"
+    "eslint": "8.57.1",
+    "eslint-config-next": "14.2.35",
+    "playwright": "1.64.0"
   }
 }

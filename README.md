@@ -1,0 +1,107 @@
+# C-DAC Visitor Management System
+
+A connected visitor application for Visitors, Hosts, Administrators, Planners, and Security staff. The modern frontend uses your existing Next.js/React design and dependencies. A dedicated Express/MongoDB API powers its accounts and visit records. The original backend is retained in the repository under the `legacy:*` scripts; the downloadable application uses the new workspace API.
+
+## Run on your Windows computer
+
+Install **Node.js 24 LTS** and **Docker Desktop** (Linux containers), then start Docker Desktop.
+
+Extract the application ZIP, open PowerShell inside the `VMS-app` folder, and run:
+
+```powershell
+node scripts/setup-local.cjs
+docker compose up --build -d
+```
+
+The setup command asks you to choose your administrator email and password. Password input is hidden. It creates the ignored `BE/.workspace.env` file and preserves it on subsequent runs. The first build downloads dependencies and can take a few minutes.
+
+Open **http://localhost:3000/app** and sign in with the administrator credentials you entered.
+
+Use **Accounts & audit** to create Host, Planner and Security accounts with initial passwords, then share those credentials privately. Visitors can create their own accounts on the sign-in screen. Use a registered host's email when creating a visit; the form provides host-directory suggestions.
+
+To stop the application:
+
+```powershell
+docker compose down
+```
+
+Records remain in the `mongo-data` Docker volume. `docker compose down -v` deletes that volume and all records; do not use it to stop normal development.
+
+## Test a complete visit
+
+1. As a Visitor, create a request or save an editable draft. Choose a host, dates, times, and optional travel/stay needs.
+2. As the assigned Host, approve or decline the request.
+3. As a Planner, save the approved visitor's transport and accommodation details.
+4. The requester can track the visit and copy the approved QR pass from the visit details.
+5. As Security, verify the scanned QR content through **Pass & updates**, confirm photo identification, and record assets and entry.
+6. Record departure, repeated entries if needed during the scheduled window, and visit completion.
+7. Visitors see their own history and arrangements; administrators see campus statistics, account access, and audit records.
+
+Use distinct browser profiles or an incognito window to test different roles at the same time. Roles are assigned by the administrator and enforced by the server; users cannot switch privileges through a dropdown. The separate `/workspace` page remains a clearly labeled sample design preview.
+
+Multi-day visits are supported. Walk-ins are limited to the same day, cannot request travel/stay, and require host approval before entry. Revoked or completed passes cannot be used. In-app notifications are stored in the database. Email delivery and automated face recognition are **not configured**; they need an email provider and a compatible recognition service/device. Security currently confirms identity manually, and QR content can be pasted from a scanner.
+
+## Run without the application container
+
+Start a local MongoDB server on port 27017. With Docker available, you can start just the database service:
+
+```powershell
+docker compose up -d mongo
+```
+
+That Compose database is private to its Docker network. For running the API directly, either use your own local MongoDB or run a separately named local container:
+
+```powershell
+docker run -d --name vms-local-mongo -p 127.0.0.1:27017:27017 -v vms-local-data:/data/db mongo:8.0
+```
+
+In one PowerShell window:
+
+```powershell
+cd BE
+npm ci
+npm start
+```
+
+In another:
+
+```powershell
+cd FE
+npm ci
+npm run dev
+```
+
+The frontend proxies `/api/workspace` to the API on port 8001, so the browser talks to one origin. The API listens only on localhost by default. Set `WORKSPACE_MONGODB_URI` in `BE/.workspace.env` if your database uses another location. The new API never loads the old committed `BE/.env` or SMTP credentials.
+
+## Validation
+
+With local MongoDB running:
+
+```powershell
+cd BE
+npm test
+```
+
+The isolated API suite verifies registration, session and CSRF checks, role permissions, visitor privacy, host approval, concurrency, pass verification/revocation, arrangements, repeated movements, drafts, cancellation, account deactivation, audit records, notifications, multi-day visits, and walk-in rules. It creates and drops a uniquely named test database.
+
+Frontend sample regression checks, with a frontend server running:
+
+```powershell
+cd FE
+npx playwright install chromium
+npm run test:workspace
+```
+
+For the production frontend:
+
+```powershell
+cd FE
+npm run build
+npm start
+```
+
+## A public test link
+
+Localhost is accessible on your own computer. To create a public link, deploy the application container and MongoDB to a hosting account with persistent storage, put HTTPS in front of the app, and set `WORKSPACE_SECURE_COOKIES=true`. Keep MongoDB private, provide administrator configuration securely, and use a unique strong password. The supplied Compose port is bound to localhost intentionally. No public deployment has been created in this chat.
+
+The ZIP excludes `.env` files, administrator credentials, private keys, database files, dependencies, build outputs, and the old credential-bearing backend source. Do not upload your generated `BE/.workspace.env` to GitHub.

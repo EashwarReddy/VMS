@@ -16,7 +16,6 @@ const nextConfig = {
 
   experimental: {
     esmExternals: true,
-    allowedDevOrigins: ['http://10.244.3.201:3000', 'http://localhost:3000'],
   },
 
   webpack: (config) => {
@@ -25,6 +24,10 @@ const nextConfig = {
       fs: false,
     };
     return config;
+  },
+
+  async rewrites() {
+    return [{ source: '/api/workspace/:path*', destination: `${process.env.WORKSPACE_API_URL || 'http://127.0.0.1:8001'}/api/workspace/:path*` }];
   },
 
   async redirects() {

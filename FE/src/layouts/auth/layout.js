@@ -1,123 +1,154 @@
-import PropTypes from 'prop-types';
-import NextLink from 'next/link';
-import { Avatar, Box, Stack, Typography, Unstable_Grid2 as Grid } from '@mui/material';
-import { motion } from 'framer-motion';
+import Link from "next/link";
+import PropTypes from "prop-types";
+import { Box, Typography } from "@mui/material";
+import { ArrowLeft, Building2, Check, ShieldCheck } from "lucide-react";
 
-// TODO: Change subtitle text
-
-export const Layout = (props) => {
-  const { children } = props;
-
-  return (
+export const Layout = ({ children }) => (
+  <Box
+    component="main"
+    sx={{
+      minHeight: "100vh",
+      display: "grid",
+      gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" },
+      background: "#F9FAF7",
+    }}
+  >
     <Box
-      component="main"
       sx={{
-        display: 'flex',
-        flex: '1 1 auto'
+        position: "relative",
+        minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        bgcolor: "white",
       }}
     >
-      <Grid
-        container
-        sx={{ flex: '1 1 auto' }}
-        xs={12}
-
+      <Box
+        component={Link}
+        href="/"
+        sx={{
+          display: "inline-flex",
+          gap: 1,
+          alignItems: "center",
+          color: "#7B8D6C",
+          position: "absolute",
+          top: 28,
+          left: 32,
+          textDecoration: "none",
+          fontSize: 12,
+          zIndex: 1,
+        }}
       >
-        <Grid
-          xs={12}
-          lg={6}
-          sm={12}
+        <ArrowLeft size={16} />
+        Back to workspace
+      </Box>
+      {children}
+    </Box>
+    <Box
+      sx={{
+        display: { xs: "none", lg: "flex" },
+        flexDirection: "column",
+        justifyContent: "center",
+        p: 9,
+        background: "#EAF0E3",
+        color: "#345540",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      <Box
+        sx={{
+          position: "absolute",
+          right: -170,
+          bottom: -160,
+          width: 550,
+          height: 550,
+          borderRadius: "50%",
+          border: "1px solid #D7E1CB",
+          boxShadow:
+            "0 0 0 50px #E5ECDD, 0 0 0 51px #D9E3CF, 0 0 0 100px #E7EEDE",
+        }}
+      />
+      <Box sx={{ position: "relative", zIndex: 1 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 7 }}>
+          <Building2 size={35} />
+          <Box>
+            <Typography sx={{ fontSize: 28, fontWeight: 700 }}>
+              C-DAC
+            </Typography>
+            <Typography
+              sx={{ fontSize: 9, letterSpacing: 2, color: "#839477" }}
+            >
+              HYDERABAD CAMPUS
+            </Typography>
+          </Box>
+        </Box>
+        <Typography
+          sx={{ fontSize: 10, letterSpacing: 2, color: "#80936F", mb: 2 }}
+        >
+          A CONNECTED CAMPUS EXPERIENCE
+        </Typography>
+        <Typography
+          component="h2"
           sx={{
-            backgroundColor: 'background.paper',
-            display: 'flex',
-            flexDirection: 'column',
-            position: 'relative'
+            fontSize: 46,
+            lineHeight: 1.2,
+            letterSpacing: -2,
+            fontWeight: 550,
+            mb: 3,
           }}
         >
+          Every visit starts
+          <br />
+          with a welcome.
+        </Typography>
+        <Typography
+          sx={{
+            color: "#86977A",
+            maxWidth: 340,
+            fontSize: 14,
+            lineHeight: 1.8,
+            mb: 5,
+          }}
+        >
+          One workspace for visitors, hosts, planners, and security. A smoother
+          journey for everyone.
+        </Typography>
+        {[
+          "Plan your visit with confidence",
+          "Stay informed at every step",
+          "Arrive with a secure visitor pass",
+        ].map((text) => (
           <Box
-            component="header"
+            key={text}
             sx={{
-              left: 0,
-              py: 3,
-              position: 'fixed',
-              top: 0,
-              width: '100%',
-              // backgroundColor : "red"
+              display: "flex",
+              gap: 1.5,
+              alignItems: "center",
+              mb: 2,
+              color: "#6E865D",
+              fontSize: 13,
             }}
           >
-            <Box
-              component={NextLink}
-              href="/auth/signin"
-              sx={{
-                display: 'inline-flex',
-                height: 84,
-                width: 120,
-                // backgroundColor : "red",
-                pl: 1
-              }}
-            >
-              <Avatar
-                variant="square"
-                sx={{ width: '9em', height: '6em' }}
-                src="/assets/800px-CDAC_LOGO_crop.png" />
-
-            </Box>
+            <Check size={16} />
+            {text}
           </Box>
-          {children}
-        </Grid>
-        <Grid
-          xs={12}
-          lg={6}
+        ))}
+        <Box
           sx={{
-            alignItems: 'center',
-            background: 'radial-gradient(50% 50% at 50% 50%, #122647 0%, #090E23 100%)',
-            color: 'white',
-            display: 'flex',
-            justifyContent: 'center',
-            '& img': {
-              maxWidth: '100%'
-            }
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            mt: 8,
+            color: "#8C9F7D",
+            fontSize: 11,
           }}
         >
-          {/* <motion.div
-            style={{
-              width: '100%',
-              height: '100%',
-              background: 'radial-gradient(50% 50% at 50% 50%, #122647 0%, #090E23 100%)',
-              display : 'flex',
-              justifyContent : 'center',
-              alignItems : 'center'
-            }}
-            animate={{
-              background: [
-                'radial-gradient(50% 50% at 50% 50%, #122647 60%, #090E23 100%)',
-                'radial-gradient(50% 50% at 50% 50%, #122647 30%, #090E23 100%)',
-                // 'radial-gradient(10% 10% at 50% 50%, #122647 50%, #1C304D 100%)', // Subtle color based on existing colors
-              ],
-            }}
-            transition={{
-              duration: 1, // Duration of each blink
-              repeat: Infinity, // Repeat the animation infinitely
-              repeatType: 'reverse', // Reverse between the two gradient states
-            }}
-          > */}
-            <Stack direction="column">
-              <Box sx={{ py: 3, px: 6 }}>
-
-
-                <img
-                  alt=""
-                  src="/assets/cdac-new.png"
-                />
-              </Box>
-              <Typography variant='h6'>Centre for Development of Advanced Computing</Typography>
-            </Stack>
-          {/* </motion.div> */}
-        </Grid>
-      </Grid>
-    </Box >
-  );
-};
-
-Layout.prototypes = {
-  children: PropTypes.node
-};
+          <ShieldCheck size={16} />
+          Thoughtful visits. A safer campus.
+        </Box>
+      </Box>
+    </Box>
+  </Box>
+);
+Layout.propTypes = { children: PropTypes.node };

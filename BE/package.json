@@ -2,11 +2,16 @@
   "name": "visitormanagementsystem",
   "version": "1.0.0",
   "description": "A visitor management system for cdac",
-  "main": "index.js",
+  "main": "src/workspace/server.js",
   "scripts": {
-    "dev": "nodemon src/index",
-    "start": "node src/index",
-    "test": "jest"
+    "dev": "nodemon src/workspace/server.js",
+    "start": "node src/workspace/server.js",
+    "test": "node --test tests/workspace-api.test.cjs",
+    "workspace": "node src/workspace/server.js",
+    "test:workspace": "node --test tests/workspace-api.test.cjs",
+    "legacy:start": "node src/index",
+    "legacy:dev": "nodemon src/index",
+    "legacy:test": "jest"
   },
   "author": "Ashwani",
   "license": "ISC",

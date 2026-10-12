@@ -1,146 +1,152 @@
-import NextLink from 'next/link';
-import { usePathname } from 'next/navigation';
-import PropTypes from 'prop-types';
-import ArrowTopRightOnSquareIcon from '@heroicons/react/24/solid/ArrowTopRightOnSquareIcon';
-import ChevronUpDownIcon from '@heroicons/react/24/solid/ChevronUpDownIcon';
-import {
-  Box,
-  Button,
-  Divider,
-  Drawer,
-  Stack,
-  SvgIcon,
-  Typography,
-  useMediaQuery
-} from '@mui/material';
-import { Logo } from 'src/components/logo';
-import { Scrollbar } from 'src/components/scrollbar';
-// import { items } from './config';
-import { SideNavItem } from './side-nav-item';
-import { alpha } from '@mui/material/styles';
-export const SideNav = (props) => {
-  const { open, onClose, items } = props;
-  const pathname = usePathname();
-  const lgUp = useMediaQuery((theme) => theme.breakpoints.up('lg'));
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import PropTypes from "prop-types";
+import { Box, Drawer, Stack, Typography, useMediaQuery } from "@mui/material";
+import { Building2, MapPin, ArrowUpRight } from "lucide-react";
+import { Scrollbar } from "src/components/scrollbar";
+import { SideNavItem } from "./side-nav-item";
 
+export const SideNav = ({ open, onClose, items }) => {
+  const pathname = usePathname();
+  const lgUp = useMediaQuery((theme) => theme.breakpoints.up("lg"));
   const content = (
-    <Scrollbar
-      sx={{
-        height: '100%',
-        '& .simplebar-content': {
-          height: '100%'
-        },
-        '& .simplebar-scrollbar:before': {
-          background: 'neutral.400'
-        }
-      }}
-    >
+    <Scrollbar sx={{ height: "100%" }}>
       <Box
         sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100%'
+          p: 3,
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
         }}
       >
-        <Box sx={{ p: 3 }}>
-          <Box
-            component={NextLink}
-            href="/"
-            sx={{
-              display: 'inline-flex',
-              height: 32,
-              width: 32
-            }}
-          >
-            <img
-              alt=""
-              src="/assets/cdac-new.png"
-            style={{ height : 100, width : 100}}
-            />
-          </Box>
-         
-        </Box>
-        <Divider sx={{ borderColor: 'neutral.700' }} />
         <Box
-          component="nav"
+          component={Link}
+          href="/"
           sx={{
-            flexGrow: 1,
-            px: 2,
-            py: 3
+            display: "flex",
+            alignItems: "center",
+            gap: 1.5,
+            textDecoration: "none",
+            color: "#344D3C",
+            mb: 4,
           }}
         >
-          <Stack
-            component="ul"
-            spacing={0.5}
+          <Box
             sx={{
-              listStyle: 'none',
-              p: 0,
-              m: 0
+              p: 1.2,
+              bgcolor: "#EAF1E5",
+              borderRadius: 2,
+              display: "flex",
             }}
           >
-            {items?.map((item) => {
-              const active = item.path ? (pathname === item.path) : false;
-
-              return (
-                <SideNavItem
-                  active={active}
-                  disabled={item.disabled}
-                  external={item.external}
-                  icon={item.icon}
-                  key={item.title}
-                  path={item.path}
-                  title={item.title}
-                />
-              );
-            })}
-          </Stack>
+            <Building2 size={26} />
+          </Box>
+          <Box>
+            <Typography
+              sx={{ fontSize: 24, fontWeight: 700, letterSpacing: "-1px" }}
+            >
+              C-DAC
+            </Typography>
+            <Typography
+              sx={{ fontSize: 8, letterSpacing: "1.5px", color: "#86957D" }}
+            >
+              VISITOR WORKSPACE
+            </Typography>
+          </Box>
         </Box>
-        <Divider sx={{ borderColor: 'neutral.700' }} />
-      
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            border: "1px solid #E5EADC",
+            borderRadius: 2,
+            p: 1.5,
+            mb: 4,
+            color: "#849476",
+            fontSize: 11,
+          }}
+        >
+          <MapPin size={15} />
+          Hyderabad campus
+        </Box>
+        <Typography
+          sx={{
+            fontSize: 9,
+            color: "#9BA68F",
+            letterSpacing: "1.5px",
+            mb: 2,
+            px: 1,
+          }}
+        >
+          WORKSPACE
+        </Typography>
+        <Stack component="nav" aria-label="Account navigation">
+          <Stack
+            component="ul"
+            spacing={0.6}
+            sx={{ listStyle: "none", p: 0, m: 0 }}
+          >
+            {items
+              ?.filter((item) => item && typeof item === "object")
+              .map((item) => (
+                <SideNavItem
+                  key={item.path}
+                  active={pathname === item.path}
+                  {...item}
+                />
+              ))}
+          </Stack>
+        </Stack>
+        <Box sx={{ mt: "auto", pt: 5 }}>
+          <Box
+            component={Link}
+            href="/workspace"
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              p: 2,
+              bgcolor: "#F3F6ED",
+              borderRadius: 2,
+              textDecoration: "none",
+              color: "#668254",
+              fontSize: 12,
+            }}
+          >
+            Explore the new workspace
+            <ArrowUpRight size={16} />
+          </Box>
+          <Typography
+            sx={{ fontSize: 10, color: "#A0AB95", mt: 2, textAlign: "center" }}
+          >
+            Thoughtful visits. A safer campus.
+          </Typography>
+        </Box>
       </Box>
     </Scrollbar>
   );
-
-  if (lgUp) {
-    return (
-      <Drawer
-        anchor="left"
-        open
-        PaperProps={{
-          sx: {
-            backgroundColor: 'neutral.800',
-            color: 'common.white',
-            width: 280
-          }
-        }}
-        variant="permanent"
-      >
-        {content}
-      </Drawer>
-    );
-  }
-
   return (
     <Drawer
       anchor="left"
+      open={lgUp || open}
       onClose={onClose}
-      open={open}
+      variant={lgUp ? "permanent" : "temporary"}
       PaperProps={{
         sx: {
-          backgroundColor: 'neutral.800',
-          color: 'common.white',
-          width: 280
-        }
+          width: 280,
+          background: "#FFF",
+          borderRight: "1px solid #E7EBE0",
+        },
       }}
       sx={{ zIndex: (theme) => theme.zIndex.appBar + 100 }}
-      variant="temporary"
     >
       {content}
     </Drawer>
   );
 };
-
 SideNav.propTypes = {
+  open: PropTypes.bool,
   onClose: PropTypes.func,
-  open: PropTypes.bool
+  items: PropTypes.array,
 };

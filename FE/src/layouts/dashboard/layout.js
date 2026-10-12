@@ -55,22 +55,16 @@ const handleClose = () => {
   let items = null;
 
   if (auth?.user?.roles == Roles["Admin"]) {
-    let temp = adminitems
-    temp.push("/verifyPNR")
-items = temp
+    items = adminitems;
   }
   else if (auth?.user?.roles == (Roles["Visitor"])) {
     items = useritems;
   } else if (auth?.user?.roles == (Roles["Host"])) {
     items = hostitems
   } else if (auth?.user?.roles == (Roles["Planner"])) {
-    let temp = planneritems
-    temp.push("/verifyPNR")
-items = temp
+    items = planneritems;
   } else if (auth?.user?.roles == (Roles["SecurityGuard"])){
-    let temp = securityguarditems
-    temp.push("/verifyPNR")
-items = temp
+    items = securityguarditems;
   }
   else {
     items = general

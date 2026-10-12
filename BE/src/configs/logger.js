@@ -9,7 +9,8 @@ const fs = require("fs");
 //   fs.mkdirSync(logDir, { mode: 0o750 }); // secure permissions
 // }
 
-const logDir = "/var/log/VMS-app";
+// Keep local development writable without requiring system-level privileges.
+const logDir = process.env.LOG_DIR || path.join(__dirname, "../../logs");
 
 // if (!fs.existsSync(logDir)) {
 //   fs.mkdirSync(logDir, { recursive: true, mode: 0o750 });
