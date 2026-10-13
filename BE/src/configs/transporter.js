@@ -1,40 +1,14 @@
 const nodemailer = require("nodemailer");
 
-// const transporter = nodemailer.createTransport({
-//   host: "smtp.gmail.com",
-//   port: 587,
-//   secure: false, // true for 465, false for other ports
-//   auth: {
-//     user: "shashikantdhamame07@gmail.com",
-//     pass: "efzesejdpszqwxkw",
-//   },
-// });
-
+// Supply credentials through local environment configuration, never source code.
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // true for 465, false for other ports
+  host: process.env.SMTP_HOST || "smtp.gmail.com",
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: process.env.SMTP_SECURE === "true",
   auth: {
-        user: "fspbct@gmail.com",
-        pass: "teldehzffnuufuko",
-      },
+    user: process.env.EMAIL_SERVICE_ID,
+    pass: process.env.EMAIL_SERVICE_PASSWORD,
+  },
 });
 
-module.exports = {
-  transporter,
-};
-
-// let mailOptions = {
-//   from: '"Shahshikant" <shashikantdhamame07@gmail.com>', // sender address
-//   to: "ashwani341711@gmail.com", // list of receivers
-//   subject: "Test", // Subject line
-//   html: `<h2>Testing the mail service only!</h2>`, // html body
-// };
-
-// // send mail with defined transport object
-// transporter.sendMail(mailOptions, (error, info) => {
-//   if (error) {
-//     return console.log(error);
-//   }
-//   console.log("Mail sent: %s", info.messageId);
-// });
+module.exports = { transporter };

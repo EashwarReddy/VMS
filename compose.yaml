@@ -1,0 +1,29 @@
+services:
+  mongo:
+    image: mongo:8.0
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1}).ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  app:
+    image: vms-workspace:local
+    build:
+      context: .
+      dockerfile: Dockerfile.workspace
+    env_file: ./BE/.workspace.env
+    environment:
+      WORKSPACE_MONGODB_URI: mongodb://mongo:27017/vms_workspace
+      WORKSPACE_HOST: 127.0.0.1
+      WORKSPACE_PORT: 8001
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  mongo-data:

@@ -1,65 +1,30 @@
-import Head from 'next/head';
-import { subDays, subHours } from 'date-fns';
-import { Box, Container, Unstable_Grid2 as Grid, Typography } from '@mui/material';
-import { Layout as DashboardLayout } from 'src/layouts/dashboard/layout';
-import { useEffect } from 'react';
-import { useAuth } from 'src/hooks/use-auth';
-import { Roles } from 'src/components/roles';
-import { useRouter } from 'next/router';
+import Workspace from "src/components/workspace/workspace";
+import { useEffect } from "react";
+import { useRouter } from "next/router";
+import { useAuth } from "src/hooks/use-auth";
+import { Roles } from "src/components/roles";
 
-
-const now = new Date();
-
-const Page = () => {
+// Preserve the existing sign-in destination. The role selector in the sample
+// workspace never supplies credentials or changes the authenticated user.
+export default function Home() {
   const auth = useAuth();
-  console.log("auth from home page::",auth)
   const router = useRouter();
+  const destinations = {
+    [Roles.Admin]: "/dashboard",
+    [Roles.Host]: "/ApprovalVistis",
+    [Roles.Visitor]: "/standard",
+    [Roles.Planner]: "/dashboardplanner",
+    [Roles.SecurityGuard]: "/securityRegistration",
+  };
+  const destination = auth.isAuthenticated
+    ? destinations[auth.user?.roles]
+    : null;
   useEffect(() => {
-    if (auth?.user?.roles == Roles['Admin']) {
-      router.push("/dashboard");
-    }
-    else if (auth?.user?.roles == Roles['Visitor']) {
-      router.push("/standard")
-    }
-    else if (auth?.user?.roles == Roles['Planner']) {
-      router.push("/dashboardplanner");
-    }
-    else if (auth?.user?.roles == Roles['Host']) {
-      router.push("/standard")
-    }
-    else {
-      router.push("/")
-      console.log(auth, "auth")
-    }
-  }, [])
-
-
-  return (
-    <>
-      <Head>
-        <title>
-          Visitor Management System
-        </title>
-      </Head>
-      <Box
-        component="main"
-        sx={{
-          flexGrow: 1,
-          py: 8
-        }}
-      >
-        <Container maxWidth="xl">
-          <Typography variant='h1'>Home Page</Typography>
-        </Container>
-      </Box>
-    </>
-  )
-};
-
-Page.getLayout = (page) => (
-  <DashboardLayout>
-    {page}
-  </DashboardLayout>
-);
-
-export default Page;
+    if (destination) router.replace(destination);
+  }, [destination, router]);
+  if (destination)
+    return (
+      <p style={{ padding: 32, color: "#2E624B" }}>Opening your workspace…</p>
+    );
+  return <Workspace />;
+}

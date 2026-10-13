@@ -1,0 +1,11 @@
+# Local screenshots generated while reviewing the application
+/artifacts/
+
+# Local application credentials and packaging outputs
+**/.workspace.env
+/deliverables/
+
+# Private local configuration and TLS keys
+**/.env
+**/.env.local
+**/sslcerts/key.pem

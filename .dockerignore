@@ -1,0 +1,12 @@
+.git
+**/node_modules
+**/.next
+**/.env
+**/.env.*
+**/.workspace.env
+**/logs
+**/sslcerts
+**/uploads
+artifacts
+deliverables
+BE/public

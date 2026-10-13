@@ -1,11 +1,11 @@
 import React, { useState } from "react";
 import Head from 'next/head'
-import { Inter } from 'next/font/google'
+
 import axios from 'axios';
 import { Typography, Container, TextField, Button, CircularProgress } from '@mui/material';
 import TypingAnimation from "../components/TypingAnimation";
 
-const inter = Inter({ subsets: ['latin'] });
+
 
 export default function Chatboat() {
   const [inputValue, setInputValue] = useState('');

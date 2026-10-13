@@ -1,0 +1,14 @@
+FROM node:24-bookworm-slim
+WORKDIR /app
+COPY FE/package.json FE/package-lock.json ./FE/
+RUN --mount=type=secret,id=registry_ca,required=false if [ -f /run/secrets/registry_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/registry_ca; fi; cd FE && npm ci --no-audit --no-fund
+COPY BE/package.json BE/package-lock.json ./BE/
+RUN --mount=type=secret,id=registry_ca,required=false if [ -f /run/secrets/registry_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/registry_ca; fi; cd BE && npm ci --omit=dev --no-audit --no-fund
+COPY FE ./FE
+COPY BE/src/workspace ./BE/src/workspace
+RUN cd FE && NEXT_TELEMETRY_DISABLED=1 npm run build
+COPY scripts/run-container.cjs ./scripts/run-container.cjs
+ENV NODE_ENV=production
+ENV WORKSPACE_HOST=0.0.0.0
+EXPOSE 3000
+CMD ["node", "scripts/run-container.cjs"]
