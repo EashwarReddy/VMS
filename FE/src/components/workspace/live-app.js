@@ -10,6 +10,7 @@ import {
 } from "@mui/material";
 import { Building2, ArrowRight, ShieldCheck } from "lucide-react";
 import Workspace from "./workspace";
+import ArrivalScanner from "./arrival-scanner";
 import styles from "./workspace.module.css";
 
 export default function LiveApp() {
@@ -25,8 +26,7 @@ export default function LiveApp() {
   const [events, setEvents] = useState([]);
   const [updates, setUpdates] = useState([]);
   const [message, setMessage] = useState("");
-  const [qr, setQr] = useState("");
-  const [verified, setVerified] = useState(null);
+  const [arrival, setArrival] = useState(false);
   const csrf = useRef("");
   const request = useCallback(async (path, body, method = "POST") => {
     const response = await fetch("/api/workspace" + path, {
@@ -130,7 +130,6 @@ export default function LiveApp() {
   const openTools = async () => {
     setTools(true);
     setMessage("");
-    setVerified(null);
     try {
       const results = await request("/notifications");
       setUpdates(results.notifications);
@@ -185,19 +184,18 @@ export default function LiveApp() {
       setBusy(false);
     }
   };
-  const verify = async (event) => {
-    event.preventDefault();
-    setVerified(null);
-    try {
-      const result = await request("/verify-pass", { qr });
-      setVerified(result.visit);
-      setMessage(
-        "Pass verified. Confirm photo identification before checking in from Entry & exit."
-      );
-    } catch (e) {
-      setMessage(e.message);
-    }
-  };
+  const verifyArrival = (code) => request("/verify-pass", { qr: code });
+  const loadModule = useCallback(
+    (name) =>
+      request(
+        name === "Travel & Accommodation"
+          ? "/travel"
+          : name === "Movement History"
+            ? "/movements"
+            : "/visits"
+      ),
+    [request]
+  );
   if (loading)
     return (
       <div className={styles.authShell}>
@@ -311,7 +309,15 @@ export default function LiveApp() {
           getPass,
           logout,
           onTools: openTools,
+          onArrival: () => setArrival(true),
+          loadModule,
         }}
+      />
+      <ArrivalScanner
+        open={arrival}
+        onClose={() => setArrival(false)}
+        verify={verifyArrival}
+        admit={action}
       />
       {error && (
         <div className={styles.toast} role="alert">
@@ -328,36 +334,13 @@ export default function LiveApp() {
         <DialogTitle>
           {user.role === "Admin"
             ? "Accounts, audit & updates"
-            : "Pass verification & updates"}
+            : "Account & updates"}
         </DialogTitle>
         <DialogContent>
           {message && (
             <p role="status" className={styles.formNote}>
               {message}
             </p>
-          )}
-          {["Admin", "Security"].includes(user.role) && (
-            <section className={styles.detailSection}>
-              <h3>Verify a visitor QR pass</h3>
-              <form onSubmit={verify} className={styles.formGrid}>
-                <label className={styles.field}>
-                  <span>Pass content</span>
-                  <input
-                    value={qr}
-                    onChange={(e) => setQr(e.target.value)}
-                    required
-                    placeholder="Paste the scanned VMS-PASS content"
-                  />
-                </label>
-                <button className={styles.primaryButton}>Verify pass</button>
-              </form>
-              {verified && (
-                <p>
-                  {verified.name} · {verified.id} · {verified.status} ·{" "}
-                  {verified.date}
-                </p>
-              )}
-            </section>
           )}
           {user.role === "Admin" && (
             <>

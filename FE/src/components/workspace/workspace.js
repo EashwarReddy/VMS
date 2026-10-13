@@ -57,20 +57,22 @@ import {
   timeLabel,
 } from "./data";
 import styles from "./workspace.module.css";
+import TravelAccommodation from "./travel-accommodation";
+import MovementHistory from "./movement-history";
 
 const NAV = [
   ["Overview", LayoutDashboard],
   ["Visitors", Users],
   ["Approvals", CheckCheck],
-  ["Travel & stay", Truck],
-  ["Entry & exit", DoorOpen],
+  ["Travel & Accommodation", Truck],
+  ["Movement History", DoorOpen],
   ["Visit history", Clock3],
 ];
 const ROLE_NAV = {
   Admin: NAV.map(([name]) => name),
   Host: ["Overview", "Visitors", "Approvals", "Visit history"],
-  Planner: ["Overview", "Travel & stay", "Visit history"],
-  Security: ["Overview", "Visitors", "Entry & exit", "Visit history"],
+  Planner: ["Overview", "Travel & Accommodation", "Visit history"],
+  Security: ["Overview", "Visitors", "Movement History", "Visit history"],
   Visitor: ["Overview", "Visitors", "Visit history"],
 };
 const statusClass = (status) =>
@@ -439,10 +441,17 @@ function VisitForm({ visit, spot, onClose, onSave, live, feedback }) {
   );
 }
 
-function Detail({ visit, role, onClose, onChange, notify, live, feedback }) {
-  const [plan, setPlan] = useState(
-    visit.plan || { vehicle: "", pickup: visit.pickup || "", stay: "" }
-  );
+function Detail({
+  visit,
+  role,
+  onClose,
+  onChange,
+  notify,
+  live,
+  feedback,
+  module,
+  onScan,
+}) {
   const [assets, setAssets] = useState("");
   const [pass, setPass] = useState(null);
   const fetchPass = live?.getPass;
@@ -592,6 +601,12 @@ function Detail({ visit, role, onClose, onChange, notify, live, feedback }) {
               </p>
               <button
                 className={styles.textButton}
+                disabled={Boolean(live && !pass)}
+                title={
+                  live && !pass
+                    ? "The pass is loading or unavailable."
+                    : undefined
+                }
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(
@@ -632,144 +647,67 @@ function Detail({ visit, role, onClose, onChange, notify, live, feedback }) {
             </button>
           </div>
         )}
-        {(visit.transport || visit.accommodation) && (
-          <section className={styles.detailSection}>
-            <h3>
-              <Truck size={18} />
-              Travel & accommodation
-            </h3>
-            {canPlan && visit.status === "Approved" ? (
+        {module !== "Movement History" &&
+          (visit.transport || visit.accommodation) && (
+            <TravelAccommodation
+              visit={visit}
+              editable={module === "Travel & Accommodation" && canPlan}
+              onSave={(plan) => {
+                patch({ plan });
+                notify("Travel and stay arrangements saved.");
+              }}
+            />
+          )}
+        {module === "Movement History" &&
+          canAdmit &&
+          visit.status === "Approved" &&
+          !live && (
+            <section className={styles.detailSection}>
+              <h3>
+                <ShieldCheck size={18} />
+                Verify & check in
+              </h3>
+              <p>Confirm photo identification before recording entry.</p>
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  patch({ plan });
-                  notify("Travel and stay arrangements saved.");
+                  checkIn();
                 }}
                 className={styles.formGrid}
               >
-                {visit.transport && (
-                  <>
-                    <Field
-                      label="Vehicle / travel arrangement"
-                      required
-                      value={plan.vehicle}
-                      onChange={(e) =>
-                        setPlan({ ...plan, vehicle: e.target.value })
-                      }
-                      placeholder="e.g. Campus shuttle"
-                    />
-                    <Field
-                      label="Pickup location & time"
-                      required
-                      value={plan.pickup}
-                      onChange={(e) =>
-                        setPlan({ ...plan, pickup: e.target.value })
-                      }
-                    />
-                  </>
-                )}
-                {visit.accommodation && (
-                  <Field
-                    label="Accommodation"
-                    required
-                    value={plan.stay}
-                    onChange={(e) => setPlan({ ...plan, stay: e.target.value })}
-                    placeholder="Guest house and room"
-                  />
-                )}
+                <Field
+                  label="Assets carried (optional)"
+                  value={assets}
+                  onChange={(e) => setAssets(e.target.value)}
+                  placeholder="e.g. Laptop · serial number"
+                />
+                <label className={styles.checkbox}>
+                  <input type="checkbox" required />
+                  Identity and visit authorization verified
+                </label>
                 <button className={styles.primaryButton} type="submit">
-                  Save arrangements
+                  <LogIn size={16} />
+                  Check in visitor
                 </button>
               </form>
-            ) : (
-              <p>
-                {visit.plan
-                  ? [visit.plan.vehicle, visit.plan.pickup, visit.plan.stay]
-                      .filter(Boolean)
-                      .join(" · ")
-                  : "Arrangements pending. The planner will update this visit."}
-              </p>
-            )}
-          </section>
-        )}
-        {canAdmit && visit.status === "Approved" && (
-          <section className={styles.detailSection}>
-            <h3>
-              <ShieldCheck size={18} />
-              Verify & check in
-            </h3>
-            <p>Confirm photo identification before recording entry.</p>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                checkIn();
-              }}
-              className={styles.formGrid}
-            >
-              <Field
-                label="Assets carried (optional)"
-                value={assets}
-                onChange={(e) => setAssets(e.target.value)}
-                placeholder="e.g. Laptop · serial number"
-              />
-              <label className={styles.checkbox}>
-                <input type="checkbox" required />
-                Identity and visit authorization verified
-              </label>
-              <button className={styles.primaryButton} type="submit">
-                <LogIn size={16} />
-                Check in visitor
+            </section>
+          )}
+        {module === "Movement History" && canAdmit && (
+          <>
+            {live && visit.status === "Approved" && (
+              <button className={styles.primaryButton} onClick={onScan}>
+                Scan visitor QR for arrival
               </button>
-            </form>
-          </section>
-        )}
-        {canAdmit && visit.status === "Checked in" && (
-          <div className={styles.actionStrip}>
-            <button className={styles.primaryButton} onClick={checkOut}>
-              <DoorOpen size={16} />
-              Record check-out
-            </button>
-          </div>
-        )}
-        {canAdmit && visit.status === "Approved" && visit.logs.length > 0 && (
-          <button
-            className={styles.textButton}
-            onClick={() => {
-              patch({ status: "Completed" });
-              notify("Visit marked complete.");
-            }}
-          >
-            <CheckCheck size={16} />
-            Finish visit
-          </button>
-        )}
-        {visit.logs.length > 0 && (
-          <section className={styles.detailSection}>
-            <h3>
-              <Clock3 size={18} />
-              Movement history
-            </h3>
-            {visit.logs.map((log, i) => (
-              <div key={i} className={styles.movement}>
-                <span>
-                  Entry {i + 1}
-                  <small>{log.assets}</small>
-                </span>
-                <span>
-                  {new Date(log.in).toLocaleTimeString("en-IN", {
-                    timeZone: "Asia/Kolkata",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                  <small>
-                    {log.out
-                      ? `Out: ${new Date(log.out).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })}`
-                      : "Currently on campus"}
-                  </small>
-                </span>
-              </div>
-            ))}
-          </section>
+            )}
+            <MovementHistory
+              visit={visit}
+              onCheckout={checkOut}
+              onComplete={() => {
+                patch({ status: "Completed" });
+                notify("Visit marked complete.");
+              }}
+            />
+          </>
         )}
         {["Admin", "Visitor"].includes(role) &&
           ["Pending approval", "Approved", "Draft"].includes(visit.status) && (
@@ -867,9 +805,33 @@ export default function Workspace({ live = null }) {
     setFilter("All statuses");
     setDepartment("All departments");
     setNavOpen(false);
+    if (live)
+      live
+        .loadModule(next)
+        .then((result) => {
+          if (!["Travel & Accommodation", "Movement History"].includes(next)) {
+            setVisits(result.visits);
+            return;
+          }
+          // Keep the campus totals while refreshing the module records.
+          setVisits((previous) => {
+            const records = new Map(previous.map((visit) => [visit.id, visit]));
+            for (const visit of result.visits) {
+              const existing = records.get(visit.id);
+              records.set(
+                visit.id,
+                next === "Travel & Accommodation" && existing
+                  ? { ...visit, logs: existing.logs }
+                  : visit
+              );
+            }
+            return [...records.values()];
+          });
+        })
+        .catch((error) => notify(error.message));
   };
   const startVisit = () => {
-    if (live && role === "Planner") navigate("Travel & stay");
+    if (live && role === "Planner") navigate("Travel & Accommodation");
     else setForm({ spot: role === "Security" });
   };
   const switchRole = (next) => {
@@ -896,14 +858,14 @@ export default function Workspace({ live = null }) {
         if (tab === "Approvals" && v.status !== "Pending approval")
           return false;
         if (
-          tab === "Travel & stay" &&
+          tab === "Travel & Accommodation" &&
           ((!v.transport && !v.accommodation) ||
-            ["Cancelled", "Declined", "Draft"].includes(v.status))
+            !["Approved", "Checked in", "Completed"].includes(v.status))
         )
           return false;
         if (
-          tab === "Entry & exit" &&
-          !["Approved", "Checked in"].includes(v.status)
+          tab === "Movement History" &&
+          !["Approved", "Checked in", "Completed"].includes(v.status)
         )
           return false;
         if (
@@ -1038,8 +1000,8 @@ export default function Workspace({ live = null }) {
     Overview: "A good day starts with a warm welcome.",
     Visitors: "Every visitor, thoughtfully managed.",
     Approvals: "The next welcome starts with you.",
-    "Travel & stay": "A smooth journey. A comfortable stay.",
-    "Entry & exit": "A clear view of who’s on campus.",
+    "Travel & Accommodation": "A smooth journey. A comfortable stay.",
+    "Movement History": "A clear view of who’s on campus.",
     "Visit history": "Every visit has a story.",
   }[tab];
 
@@ -1190,7 +1152,9 @@ export default function Workspace({ live = null }) {
               {live ? (
                 <>
                   <button className={styles.textButton} onClick={live.onTools}>
-                    {role === "Admin" ? "Accounts & audit" : "Pass & updates"}
+                    {role === "Admin"
+                      ? "Accounts & audit"
+                      : "Account & updates"}
                   </button>
                   <button className={styles.textButton} onClick={live.logout}>
                     Sign out
@@ -1347,6 +1311,25 @@ export default function Workspace({ live = null }) {
                 </section>
               </>
             )}
+            {tab === "Movement History" &&
+              ["Admin", "Security"].includes(role) &&
+              live && (
+                <div className={styles.arrivalBanner}>
+                  <div>
+                    <h2>Campus arrival checkpoint</h2>
+                    <p>
+                      Scan an approved QR pass, record assets, and verify
+                      identification before admitting the visitor.
+                    </p>
+                  </div>
+                  <button
+                    className={styles.primaryButton}
+                    onClick={live.onArrival}
+                  >
+                    Scan visitor QR
+                  </button>
+                </div>
+              )}
             <div className={styles.workGrid}>
               <section className={styles.register}>
                 <div className={styles.sectionHeading}>
@@ -1356,9 +1339,9 @@ export default function Workspace({ live = null }) {
                         ? "Visitor register"
                         : tab === "Approvals"
                           ? "Requests to review"
-                          : tab === "Travel & stay"
+                          : tab === "Travel & Accommodation"
                             ? "Visitor arrangements"
-                            : tab === "Entry & exit"
+                            : tab === "Movement History"
                               ? "Expected & on campus"
                               : tab === "Visit history"
                                 ? "Previous visits"
@@ -1366,7 +1349,7 @@ export default function Workspace({ live = null }) {
                       <span>{filtered.length}</span>
                     </h2>
                     <p>
-                      {tab === "Travel & stay"
+                      {tab === "Travel & Accommodation"
                         ? "Transport and accommodation, all in one place."
                         : "A little clarity for every arrival."}
                     </p>
@@ -1603,23 +1586,23 @@ export default function Workspace({ live = null }) {
                             ],
                           ]
                         : []),
-                      ...(ROLE_NAV[role].includes("Entry & exit")
+                      ...(ROLE_NAV[role].includes("Movement History")
                         ? [
                             [
                               "Manage entry",
                               "Verify and welcome visitors",
                               ShieldCheck,
-                              () => navigate("Entry & exit"),
+                              () => navigate("Movement History"),
                             ],
                           ]
                         : []),
-                      ...(ROLE_NAV[role].includes("Travel & stay")
+                      ...(ROLE_NAV[role].includes("Travel & Accommodation")
                         ? [
                             [
-                              "Travel & stay",
+                              "Travel & Accommodation",
                               "Take care of the journey",
                               Truck,
-                              () => navigate("Travel & stay"),
+                              () => navigate("Travel & Accommodation"),
                             ],
                           ]
                         : []),
@@ -1719,6 +1702,11 @@ export default function Workspace({ live = null }) {
           }
           live={live}
           feedback={live ? toast : null}
+          module={tab}
+          onScan={() => {
+            setSelectedId(null);
+            live?.onArrival();
+          }}
         />
       )}
       <Dialog open={resetOpen} onClose={() => setResetOpen(false)}>

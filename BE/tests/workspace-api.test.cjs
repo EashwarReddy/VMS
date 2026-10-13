@@ -276,8 +276,13 @@ test("persistent workspace permissions and visit lifecycle", async (t) => {
       200
     );
     assert.equal(
-      (await call("/verify-pass", { qr: pass + "forged" }, staff.security))
-        .status,
+      (
+        await call(
+          "/verify-pass",
+          { qr: pass.slice(0, -1) + (pass.at(-1) === "a" ? "b" : "a") },
+          staff.security
+        )
+      ).status,
       404
     );
   });
@@ -295,9 +300,56 @@ test("persistent workspace permissions and visit lifecycle", async (t) => {
         ).status,
         400
       );
+      assert.equal(
+        (
+          await call(
+            path,
+            {
+              action: "checkin",
+              identityVerified: true,
+              assets: "Laptop",
+              version: visit.version,
+            },
+            staff.security
+          )
+        ).status,
+        400
+      );
+      assert.equal(
+        (
+          await call(
+            path,
+            {
+              action: "checkin",
+              identityVerified: true,
+              qr: pass,
+              version: visit.version,
+            },
+            staff.security
+          )
+        ).status,
+        400
+      );
+      assert.equal(
+        (
+          await call(
+            path,
+            {
+              action: "checkin",
+              identityVerified: true,
+              qr: pass.slice(0, -1) + (pass.at(-1) === "a" ? "b" : "a"),
+              assets: "Laptop",
+              version: visit.version,
+            },
+            staff.security
+          )
+        ).status,
+        403
+      );
       const request = {
         action: "checkin",
         identityVerified: true,
+        qr: pass,
         assets: "Laptop",
         version: visit.version,
       };
@@ -307,6 +359,21 @@ test("persistent workspace permissions and visit lifecycle", async (t) => {
       ]);
       assert.equal(results.filter((r) => r.status === 200).length, 1);
       visit = results.find((r) => r.status === 200).data.visit;
+      assert.equal(
+        (await call("/verify-pass", { qr: pass }, staff.security)).status,
+        409
+      );
+      assert.equal(
+        (
+          await call(
+            path,
+            { action: "checkout", version: visit.version },
+            staff.planner
+          )
+        ).status,
+        403
+      );
+
       visit = (
         await call(
           path,
@@ -317,7 +384,13 @@ test("persistent workspace permissions and visit lifecycle", async (t) => {
       visit = (
         await call(
           path,
-          { action: "checkin", identityVerified: true, version: visit.version },
+          {
+            action: "checkin",
+            identityVerified: true,
+            qr: pass,
+            assets: "No assets",
+            version: visit.version,
+          },
           staff.security
         )
       ).data.visit;
@@ -443,6 +516,90 @@ test("persistent workspace permissions and visit lifecycle", async (t) => {
         (await call("/visits", undefined, staff.security)).data.visits.some(
           (v) => v.id === walk.data.visit.id
         )
+      );
+    }
+  );
+  await t.test(
+    "travel and movement modules enforce separate roles",
+    async () => {
+      for (const actor of [visitor, staff.host, staff.security])
+        assert.equal((await call("/travel", undefined, actor)).status, 403);
+      for (const actor of [visitor, staff.host, staff.planner])
+        assert.equal((await call("/movements", undefined, actor)).status, 403);
+      const travel = await call("/travel", undefined, staff.planner);
+      assert.equal(travel.status, 200);
+      assert.ok(travel.data.visits.every((v) => v.logs.length === 0));
+      const movements = await call("/movements", undefined, staff.security);
+      assert.equal(movements.status, 200);
+      assert.ok(movements.data.visits.some((v) => v.logs.length === 2));
+      const fresh = (await call("/visits", data, visitor)).data.visit;
+      const approved = (
+        await call(
+          "/visits/" + fresh.id + "/actions",
+          { action: "approve", version: fresh.version },
+          staff.host
+        )
+      ).data.visit;
+      assert.equal(
+        (
+          await call(
+            "/visits/" + approved.id + "/actions",
+            {
+              action: "plan",
+              version: approved.version,
+              plan: {
+                vehicle: "Shuttle",
+                pickup: "Airport",
+                stay: "Guesthouse",
+              },
+            },
+            staff.security
+          )
+        ).status,
+        403
+      );
+    }
+  );
+  await t.test(
+    "arrival verification rejects expired, future and revoked passes",
+    async () => {
+      const raw = crypto.randomBytes(32).toString("hex");
+      const id = "VMS-" + crypto.randomBytes(4).toString("hex").toUpperCase();
+      const future = new Date(Date.now() + 86400000).toLocaleDateString(
+        "en-CA",
+        { timeZone: "Asia/Kolkata" }
+      );
+      await Visit.create({
+        ...data,
+        id,
+        date: future,
+        endDate: future,
+        status: "Approved",
+        creator: visitor.user.email,
+        passToken: raw,
+        passHash: crypto.createHash("sha256").update(raw).digest("hex"),
+        logs: [],
+      });
+      const qr = "VMS-PASS|" + id + "|" + raw;
+      assert.equal(
+        (await call("/verify-pass", { qr }, staff.security)).status,
+        400
+      );
+      const past = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", {
+        timeZone: "Asia/Kolkata",
+      });
+      await Visit.updateOne({ id }, { $set: { date: past, endDate: past } });
+      assert.equal(
+        (await call("/verify-pass", { qr }, staff.security)).status,
+        400
+      );
+      await Visit.updateOne(
+        { id },
+        { $set: { date, endDate: date, status: "Cancelled" } }
+      );
+      assert.equal(
+        (await call("/verify-pass", { qr }, staff.security)).status,
+        404
       );
     }
   );

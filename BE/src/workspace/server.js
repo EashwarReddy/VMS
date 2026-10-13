@@ -146,6 +146,34 @@ function visitView(doc) {
   delete v.passToken;
   return v;
 }
+function arrivalWindow(visit) {
+  const day = dateInIndia();
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date());
+  if (day < visit.date || day > (visit.endDate || visit.date))
+    fail(400, "Entry is allowed only during the scheduled visit dates.");
+  const current = day + "T" + time;
+  if (
+    current < visit.date + "T" + visit.time ||
+    current > (visit.endDate || visit.date) + "T" + visit.endTime
+  )
+    fail(400, "Entry is outside the scheduled visit window.");
+}
+function passParts(qr) {
+  if (typeof qr !== "string") fail(400, "Scan a valid visitor QR pass.");
+  const parts = qr.trim().split("|");
+  if (
+    parts.length !== 3 ||
+    parts[0] !== "VMS-PASS" ||
+    !/^[a-f0-9]{64}$/.test(parts[2])
+  )
+    fail(400, "Invalid visitor pass.");
+  return { id: parts[1], digest: hash(parts[2]) };
+}
 function visitInput(input, draft, user, original) {
   const result = {};
   for (const key of [
@@ -409,6 +437,35 @@ api.get(
     })
   )
 );
+api.get(
+  "/travel",
+  asyncRoute(async (req, res) => {
+    if (!["Admin", "Planner"].includes(req.user.role))
+      fail(403, "Travel and accommodation access requires Admin or Planner.");
+    const visits = await Visit.find({
+      status: { $in: ["Approved", "Checked in", "Completed"] },
+      $or: [{ transport: true }, { accommodation: true }],
+    }).sort({ createdAt: -1 });
+    res.json({
+      visits: visits.map((doc) => {
+        const view = visitView(doc);
+        view.logs = [];
+        return view;
+      }),
+    });
+  })
+);
+api.get(
+  "/movements",
+  asyncRoute(async (req, res) => {
+    if (!["Admin", "Security"].includes(req.user.role))
+      fail(403, "Movement history access requires Security or Admin.");
+    const visits = await Visit.find({
+      status: { $in: ["Approved", "Checked in", "Completed"] },
+    }).sort({ createdAt: -1 });
+    res.json({ visits: visits.map(visitView) });
+  })
+);
 api.post(
   "/visits",
   asyncRoute(async (req, res) => {
@@ -536,27 +593,23 @@ api.post(
       status(["Approved"]);
       if (req.body.identityVerified !== true)
         fail(400, "Confirm visitor identity before entry.");
-      if (dateInIndia() < v.date || dateInIndia() > (v.endDate || v.date))
-        fail(400, "Entry is allowed only during the scheduled visit dates.");
-      const now = new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Asia/Kolkata",
-        hour: "2-digit",
-        minute: "2-digit",
-        hourCycle: "h23",
-      }).format(new Date());
-      const current = dateInIndia() + "T" + now;
+      const scanned = passParts(req.body.qr);
+      if (scanned.id !== v.id || scanned.digest !== v.passHash)
+        fail(403, "The scanned pass does not authorize this visitor.");
+      arrivalWindow(v);
       if (
-        current < v.date + "T" + v.time ||
-        current > (v.endDate || v.date) + "T" + v.endTime
+        typeof req.body.assets !== "string" ||
+        !req.body.assets.trim() ||
+        req.body.assets.trim().length > 300
       )
-        fail(400, "Entry is outside the scheduled visit window.");
+        fail(400, "Record asset details, or explicitly record No assets.");
       changes.status = "Checked in";
       changes.logs = [
         ...v.logs.map((log) => log.toObject()),
         {
           in: new Date().toISOString(),
           out: null,
-          assets: String(req.body.assets || "No assets").slice(0, 300),
+          assets: req.body.assets.trim(),
         },
       ];
     } else if (action === "checkout") {
@@ -610,14 +663,19 @@ api.post(
   asyncRoute(async (req, res) => {
     if (!["Admin", "Security"].includes(req.user.role))
       fail(403, "Security access required.");
-    const [prefix, id, raw] = String(req.body.qr || "").split("|");
-    if (prefix !== "VMS-PASS" || !raw) fail(400, "Invalid visitor pass.");
+    const scanned = passParts(req.body.qr);
     const v = await Visit.findOne({
-      id,
-      passHash: hash(raw),
+      id: scanned.id,
+      passHash: scanned.digest,
       status: { $in: ["Approved", "Checked in"] },
     });
     if (!v) fail(404, "Pass is invalid or revoked.");
+    if (v.status === "Checked in")
+      fail(
+        409,
+        "This visitor is already on campus. Record check-out before another entry."
+      );
+    arrivalWindow(v);
     res.json({ visit: visitView(v) });
   })
 );

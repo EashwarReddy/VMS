@@ -27,19 +27,31 @@ docker compose down
 
 Records remain in the `mongo-data` Docker volume. `docker compose down -v` deletes that volume and all records; do not use it to stop normal development.
 
+## Update an existing Docker installation
+
+Copy the updated application files into your existing project folder. Keep `BE/.workspace.env` and any local Compose port changes (for example, `127.0.0.1:3001:3000`). Use the same folder so Compose continues to use your existing database volume. Then rebuild:
+
+```powershell
+docker compose up --build -d
+```
+
+Do not rerun account setup or delete the database volume for this update. With the port 3001 mapping, open `http://localhost:3001/app`.
+
 ## Test a complete visit
 
 1. As a Visitor, create a request or save an editable draft. Choose a host, dates, times, and optional travel/stay needs.
 2. As the assigned Host, approve or decline the request.
-3. As a Planner, save the approved visitor's transport and accommodation details.
+3. As an Admin or Planner, open **Travel & Accommodation** and save the approved visitor's transport and accommodation details.
 4. The requester can track the visit and copy the approved QR pass from the visit details.
-5. As Security, verify the scanned QR content through **Pass & updates**, confirm photo identification, and record assets and entry.
+5. As Security, open **Movement History → Scan visitor QR**. Scan using the camera, upload a QR image, or use a USB reader. Verify the authorized visitor, confirm photo identification, and record asset details (or explicitly select no assets) before allowing entry.
 6. Record departure, repeated entries if needed during the scheduled window, and visit completion.
 7. Visitors see their own history and arrangements; administrators see campus statistics, account access, and audit records.
 
 Use distinct browser profiles or an incognito window to test different roles at the same time. Roles are assigned by the administrator and enforced by the server; users cannot switch privileges through a dropdown. The separate `/workspace` page remains a clearly labeled sample design preview.
 
-Multi-day visits are supported. Walk-ins are limited to the same day, cannot request travel/stay, and require host approval before entry. Revoked or completed passes cannot be used. In-app notifications are stored in the database. Email delivery and automated face recognition are **not configured**; they need an email provider and a compatible recognition service/device. Security currently confirms identity manually, and QR content can be pasted from a scanner.
+Multi-day visits are supported. Walk-ins are limited to the same day, cannot request travel/stay, and require host approval before entry. Revoked or completed passes cannot be used. In-app notifications are stored in the database. Email delivery and automated face recognition are **not configured**; they need an email provider and a compatible recognition service/device. Security confirms identity manually. Camera scanning requires browser permission and localhost or HTTPS; QR image upload and USB scanner input are available as alternatives.
+
+**Travel & Accommodation** is managed only by Admin and Planner. **Movement History** is managed by Security, with Admin oversight, and contains entry/departure records and assets. The server rejects unauthorized module access and checks the QR pass, scheduled visit window, revocation status, and asset record again when admitting a visitor.
 
 ## Run without the application container
 

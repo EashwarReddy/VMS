@@ -10,9 +10,11 @@ const { chromium } = require("playwright");
     viewport: { width: 1440, height: 1000 },
     reducedMotion: "reduce",
   });
+  const base = new URL(process.env.VMS_BASE_URL || "http://127.0.0.1:3000")
+    .origin;
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(process.env.VMS_BASE_URL || "http://127.0.0.1:3000", {
+  await page.goto(base + "/workspace", {
     waitUntil: "networkidle",
   });
   const nav = page.getByRole("navigation", { name: "Workspace navigation" });
@@ -26,6 +28,7 @@ const { chromium } = require("playwright");
     page.getByRole("button", { name: "Close visit details" }).click();
   const search = async (text) =>
     page.getByRole("textbox", { name: "Search visitors" }).fill(text);
+  await page.locator("tbody tr").first().waitFor();
   assert.equal(await page.locator("tbody tr").count(), 6);
   await search("nonsense");
   assert.equal(await page.locator("tbody tr").count(), 0);
@@ -53,13 +56,13 @@ const { chromium } = require("playwright");
   await dialog().getByLabel("Host name").fill("Demo Host");
   await dialog().getByLabel("Host email").fill("host@example.com");
   await dialog().getByLabel("Purpose of visit").fill("Research review");
-  await dialog().getByLabel("Departure").fill("09:00");
+  await dialog().getByLabel("Departure", { exact: true }).fill("09:00");
   await dialog().getByRole("button", { name: "Continue", exact: true }).click();
   assert.match(
     await dialog().getByRole("alert").textContent(),
     /Departure must/
   );
-  await dialog().getByLabel("Departure").fill("11:00");
+  await dialog().getByLabel("Departure", { exact: true }).fill("11:00");
   await dialog().getByLabel("Transport needed").check();
   await dialog().getByLabel("Stay needed").check();
   await dialog().getByLabel("Pickup location").fill("Airport");
@@ -89,7 +92,9 @@ const { chromium } = require("playwright");
   await close();
   console.log("PASS host approval and sample QR pass");
   await role.selectOption("Planner");
-  await nav.getByRole("button", { name: "Travel & stay", exact: true }).click();
+  await nav
+    .getByRole("button", { name: "Travel & Accommodation", exact: true })
+    .click();
   await search("Demo Visitor");
   await openVisit("Demo Visitor");
   await dialog()
@@ -105,7 +110,9 @@ const { chromium } = require("playwright");
   await close();
   console.log("PASS planner arrangements");
   await role.selectOption("Security");
-  await nav.getByRole("button", { name: "Entry & exit", exact: true }).click();
+  await nav
+    .getByRole("button", { name: "Movement History", exact: true })
+    .click();
   await search("Demo Visitor");
   await openVisit("Demo Visitor");
   await dialog().getByLabel("Assets carried (optional)").fill("Laptop DEMO-10");
@@ -143,7 +150,10 @@ const { chromium } = require("playwright");
   await dialog().getByLabel("Organization").fill("Sample");
   await dialog().getByRole("button", { name: "Continue", exact: true }).click();
   assert.equal(await dialog().getByLabel("Visit date").isDisabled(), true);
-  assert.equal(await dialog().getByLabel("Departure").inputValue(), "23:59");
+  assert.equal(
+    await dialog().getByLabel("Departure", { exact: true }).inputValue(),
+    "23:59"
+  );
   assert.equal(await dialog().getByLabel("Transport needed").count(), 0);
   await dialog()
     .getByRole("button", { name: "Save as draft", exact: true })
@@ -201,10 +211,7 @@ const { chromium } = require("playwright");
 
   assert.deepEqual(errors, []);
   console.log("PASS mobile navigation, layout and zero browser errors");
-  await page.goto(
-    (process.env.VMS_BASE_URL || "http://127.0.0.1:3000") + "/auth/signin",
-    { waitUntil: "networkidle" }
-  );
+  await page.goto(base + "/auth/signin", { waitUntil: "networkidle" });
   assert.equal(await page.locator("input").count(), 2);
   console.log("PASS existing sign-in route");
   await browser.close();

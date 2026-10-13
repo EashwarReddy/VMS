@@ -17,7 +17,7 @@ const fs = require("node:fs"),
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_EXECUTABLE || undefined,
     headless: true,
-    args: ["--no-sandbox"],
+    args: ["--no-sandbox", "--use-fake-device-for-media-stream"],
   });
   const context = await browser.newContext({
     viewport: { width: 1440, height: 1100 },
@@ -147,14 +147,21 @@ const fs = require("node:fs"),
   await dialog()
     .getByRole("button", { name: "Copy pass", exact: true })
     .click();
+  const qrImage = await dialog().locator('svg[height="100"]').screenshot();
   const qr = await page.evaluate(() => navigator.clipboard.readText());
   assert.ok(qr.startsWith("VMS-PASS|"));
   await dialog().getByRole("button", { name: "Close visit details" }).click();
   await logout();
   console.log("PASS assigned host approval and real QR pass");
   await login(accounts.Planner.email, password);
+  assert.equal(
+    await navigation()
+      .getByRole("button", { name: "Movement History", exact: true })
+      .count(),
+    0
+  );
   await navigation()
-    .getByRole("button", { name: "Travel & stay", exact: true })
+    .getByRole("button", { name: "Travel & Accommodation", exact: true })
     .click();
   await openVisit();
   await dialog().getByLabel("Vehicle / travel arrangement").fill("Shuttle");
@@ -173,31 +180,91 @@ const fs = require("node:fs"),
   await logout();
   console.log("PASS planner saves shared arrangements");
   await login(accounts.Security.email, password);
-  await page
-    .getByRole("button", { name: "Pass & updates", exact: true })
-    .click();
-  await dialog().getByLabel("Pass content").fill(qr);
-  await dialog()
-    .getByRole("button", { name: "Verify pass", exact: true })
-    .click();
-  await dialog()
-    .getByText(/Pass verified/)
-    .waitFor();
-  await dialog().getByRole("button", { name: "Close", exact: true }).click();
+  assert.equal(
+    await navigation()
+      .getByRole("button", { name: "Travel & Accommodation", exact: true })
+      .count(),
+    0
+  );
   await navigation()
-    .getByRole("button", { name: "Entry & exit", exact: true })
+    .getByRole("button", { name: "Movement History", exact: true })
     .click();
-  await openVisit();
-  await dialog().getByLabel("Assets carried (optional)").fill("Laptop TEST-1");
+  await page
+    .getByRole("button", { name: "Scan visitor QR", exact: true })
+    .click();
+  await context.grantPermissions(["camera"], { origin: base });
   await dialog()
-    .getByLabel("Identity and visit authorization verified")
+    .getByRole("button", { name: "Start camera", exact: true })
+    .click();
+  await page.waitForFunction(
+    () => document.querySelector("video")?.srcObject?.active
+  );
+  await dialog()
+    .getByRole("button", { name: "Stop camera", exact: true })
+    .click();
+  assert.equal(
+    await page
+      .locator("video")
+      .evaluate((el) =>
+        el.srcObject.getTracks().every((track) => track.readyState === "ended")
+      ),
+    true
+  );
+  await page.evaluate(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      throw new DOMException("Denied", "NotAllowedError");
+    };
+  });
+  await dialog()
+    .getByRole("button", { name: "Start camera", exact: true })
+    .click();
+  await dialog()
+    .getByRole("alert")
+    .filter({ hasText: "Camera permission was denied" })
+    .waitFor();
+  await dialog().getByLabel("QR scanner input").fill("invalid pass");
+  await dialog()
+    .getByRole("button", { name: "Verify visitor pass", exact: true })
+    .click();
+  await dialog().getByRole("alert").waitFor();
+  assert.equal(
+    await dialog()
+      .getByRole("button", { name: "Record assets & allow entry", exact: true })
+      .count(),
+    0
+  );
+  await dialog().getByLabel("Upload QR image").setInputFiles({
+    name: "visitor-pass.png",
+    mimeType: "image/png",
+    buffer: qrImage,
+  });
+  await dialog()
+    .getByRole("heading", { name: "Authorized arrival", exact: true })
+    .waitFor();
+  await dialog()
+    .getByLabel("Asset details", { exact: true })
+    .fill("Laptop TEST-1");
+  await dialog()
+    .getByLabel("Photo identification checked against the visitor")
     .check();
   await dialog()
-    .getByRole("button", { name: "Check in visitor", exact: true })
+    .getByRole("button", { name: "Record assets & allow entry", exact: true })
     .click();
   await dialog()
-    .getByRole("button", { name: "Record check-out", exact: true })
+    .getByRole("status")
+    .filter({ hasText: "was admitted" })
     .waitFor();
+  await dialog()
+    .getByRole("button", { name: "Close arrival scanner", exact: true })
+    .click();
+  await openVisit();
+  assert.equal(
+    await dialog()
+      .getByRole("region", { name: "Travel & Accommodation module" })
+      .count(),
+    0
+  );
+  assert.match(await dialog().textContent(), /Laptop TEST-1/);
   await dialog()
     .getByRole("button", { name: "Record check-out", exact: true })
     .click();
@@ -217,7 +284,12 @@ const fs = require("node:fs"),
     .click();
   await openVisit();
   assert.match(await dialog().textContent(), /Guest House 101/);
-  assert.match(await dialog().textContent(), /Laptop TEST-1/);
+  assert.equal(
+    await dialog()
+      .getByRole("region", { name: "Movement History module" })
+      .count(),
+    0
+  );
   assert.equal(
     await dialog()
       .getByRole("button", { name: "Check in visitor", exact: true })
