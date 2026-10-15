@@ -127,6 +127,15 @@ const { chromium } = require("playwright");
     .getByRole("button", { name: "Record check-out", exact: true })
     .click();
   await dialog()
+    .getByLabel("Outgoing assets checked and departure authorized")
+    .check();
+  await dialog()
+    .getByRole("button", {
+      name: "Verify assets & record departure",
+      exact: true,
+    })
+    .click();
+  await dialog()
     .getByLabel("Identity and visit authorization verified")
     .check();
   await dialog()
@@ -135,6 +144,15 @@ const { chromium } = require("playwright");
   assert.match(await dialog().textContent(), /Entry 2/);
   await dialog()
     .getByRole("button", { name: "Record check-out", exact: true })
+    .click();
+  await dialog()
+    .getByLabel("Outgoing assets checked and departure authorized")
+    .check();
+  await dialog()
+    .getByRole("button", {
+      name: "Verify assets & record departure",
+      exact: true,
+    })
     .click();
   await dialog()
     .getByRole("button", { name: "Finish visit", exact: true })

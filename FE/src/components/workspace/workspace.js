@@ -497,16 +497,29 @@ function Detail({
     setAssets("");
     notify("Visitor checked in. Entry recorded.");
   };
-  const checkOut = () => {
-    patch({
+  const checkOut = async (verification) => {
+    const result = await patch({
+      exitVerification: verification,
       status: "Approved",
       logs: visit.logs.map((log, index) =>
         index === visit.logs.length - 1
-          ? { ...log, out: new Date().toISOString() }
+          ? {
+              ...log,
+              out: new Date().toISOString(),
+              ...verification,
+              exitAssets:
+                verification.assetResult === "matched"
+                  ? log.assets
+                  : verification.exitAssets,
+              exitVerifiedBy: live?.user.email || "Sample Security",
+              exitVerifiedAt: new Date().toISOString(),
+            }
           : log
       ),
     });
-    notify("Visitor checked out. Re-entry is available during the visit.");
+    if (result !== false)
+      notify("Visitor checked out. Assets verified and departure recorded.");
+    return result;
   };
   return (
     <Dialog
@@ -733,6 +746,7 @@ export default function Workspace({ live = null }) {
   const connected = Boolean(live);
   const remoteVisits = live?.visits;
   const remoteRole = live?.user.role;
+  const notificationVisit = live?.notificationVisit;
   const [visits, setVisits] = useState(remoteVisits || []);
   const [hydrated, setHydrated] = useState(false);
   const [role, setRole] = useState(live?.user.role || "Admin");
@@ -798,6 +812,20 @@ export default function Workspace({ live = null }) {
   useEffect(() => {
     if (remoteRole) setRole(remoteRole);
   }, [remoteRole]);
+  useEffect(() => {
+    if (!notificationVisit) return;
+    setTab(
+      ["Security", "Admin"].includes(remoteRole)
+        ? "Movement History"
+        : remoteRole === "Planner"
+          ? "Travel & Accommodation"
+          : "Visitors"
+    );
+    setSelectedId(notificationVisit.id);
+    setSearch("");
+    setFilter("All statuses");
+    setDepartment("All departments");
+  }, [notificationVisit, remoteRole]);
   const navigate = (next) => {
     setTab(next);
     setPage(1);
@@ -922,7 +950,7 @@ export default function Workspace({ live = null }) {
       setVisits((previous) =>
         previous.map((v) => (v.id === record.id ? record : v))
       );
-      return;
+      return true;
     }
     const original = visits.find((v) => v.id === record.id);
     let action;
@@ -946,11 +974,14 @@ export default function Workspace({ live = null }) {
         plan: record.plan,
         identityVerified: true,
         assets: record.logs.at(-1)?.assets,
+        ...(record.exitVerification || {}),
       });
       notify("Visit updated.");
+      return true;
     } catch (error) {
       notify(error.message);
       await live.reload();
+      return false;
     }
   };
   const exportVisits = () => {
@@ -1121,11 +1152,16 @@ export default function Workspace({ live = null }) {
                 <button
                   className={styles.iconButton}
                   aria-label="Notifications"
-                  aria-expanded={notifications}
-                  onClick={() => setNotifications(!notifications)}
+                  aria-expanded={live ? undefined : notifications}
+                  aria-haspopup={live ? "dialog" : undefined}
+                  onClick={() =>
+                    live
+                      ? live.onNotifications()
+                      : setNotifications(!notifications)
+                  }
                 >
                   <Bell size={19} />
-                  {counts.pending > 0 && <i />}
+                  {(live ? live.unreadCount > 0 : counts.pending > 0) && <i />}
                 </button>
                 {notifications && (
                   <div className={styles.notifications}>
@@ -1311,6 +1347,32 @@ export default function Workspace({ live = null }) {
                 </section>
               </>
             )}
+            {tab === "Movement History" &&
+              ["Admin", "Security"].includes(role) &&
+              visits.some((visit) => visit.overstay) && (
+                <section
+                  className={styles.overstayBanner}
+                  aria-label="Overstay alerts"
+                >
+                  <h2>Overstay alerts</h2>
+                  <p>
+                    These visitors are still on campus after their scheduled
+                    departure. Contact the host and arrange checkout.
+                  </p>
+                  {visits
+                    .filter((visit) => visit.overstay)
+                    .map((visit) => (
+                      <button
+                        key={visit.id}
+                        className={styles.secondaryButton}
+                        onClick={() => setSelectedId(visit.id)}
+                      >
+                        {visit.name} · {visit.overdueMinutes} min overdue · View
+                        movement
+                      </button>
+                    ))}
+                </section>
+              )}
             {tab === "Movement History" &&
               ["Admin", "Security"].includes(role) &&
               live && (

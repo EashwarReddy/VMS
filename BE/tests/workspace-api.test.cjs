@@ -2,17 +2,25 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const mongoose = require("mongoose");
+process.env.WORKSPACE_EMAIL_ENABLED = "false";
 process.env.WORKSPACE_MONGODB_URI =
   process.env.WORKSPACE_TEST_MONGODB_URI ||
   "mongodb://127.0.0.1:27017/vms_test_" +
     crypto.randomUUID().replaceAll("-", "");
-const { app, Account, Visit } = require("../src/workspace/server");
+const {
+  app,
+  Account,
+  Visit,
+  Notification,
+  scanOverstays,
+  deliverEmails,
+} = require("../src/workspace/server");
 const { promisify } = require("node:util");
 const scrypt = promisify(crypto.scrypt);
 
 test("persistent workspace permissions and visit lifecycle", async (t) => {
   await mongoose.connect(process.env.WORKSPACE_MONGODB_URI);
-  await Promise.all([Account.init(), Visit.init()]);
+  await Promise.all([Account.init(), Visit.init(), Notification.init()]);
   const server = await new Promise((resolve) => {
     const instance = app.listen(0, "127.0.0.1", () => resolve(instance));
   });
@@ -367,7 +375,12 @@ test("persistent workspace permissions and visit lifecycle", async (t) => {
         (
           await call(
             path,
-            { action: "checkout", version: visit.version },
+            {
+              action: "checkout",
+              version: visit.version,
+              assetResult: "matched",
+              exitAuthorized: true,
+            },
             staff.planner
           )
         ).status,
@@ -377,7 +390,12 @@ test("persistent workspace permissions and visit lifecycle", async (t) => {
       visit = (
         await call(
           path,
-          { action: "checkout", version: visit.version },
+          {
+            action: "checkout",
+            version: visit.version,
+            assetResult: "matched",
+            exitAuthorized: true,
+          },
           staff.security
         )
       ).data.visit;
@@ -398,7 +416,12 @@ test("persistent workspace permissions and visit lifecycle", async (t) => {
       visit = (
         await call(
           path,
-          { action: "checkout", version: visit.version },
+          {
+            action: "checkout",
+            version: visit.version,
+            assetResult: "matched",
+            exitAuthorized: true,
+          },
           staff.security
         )
       ).data.visit;
@@ -600,6 +623,355 @@ test("persistent workspace permissions and visit lifecycle", async (t) => {
       assert.equal(
         (await call("/verify-pass", { qr }, staff.security)).status,
         404
+      );
+    }
+  );
+
+  await t.test(
+    "overstays are time-aware, scoped, deduplicated and resolved by verified departure",
+    async () => {
+      const yesterday = new Date(Date.now() - 86400000).toLocaleDateString(
+        "en-CA",
+        { timeZone: "Asia/Kolkata" }
+      );
+      const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString(
+        "en-CA",
+        { timeZone: "Asia/Kolkata" }
+      );
+      const overdue = await Visit.create({
+        ...data,
+        id: "VMS-OVERSTAY",
+        creator: visitor.user.email,
+        status: "Checked in",
+        date: yesterday,
+        endDate: yesterday,
+        time: "00:00",
+        endTime: "23:59",
+        logs: [
+          {
+            in: new Date(Date.now() - 86400000).toISOString(),
+            assets: "Laptop SERIAL-1",
+            out: null,
+          },
+        ],
+      });
+      const current = await Visit.create({
+        ...data,
+        id: "VMS-NOT-OVERDUE",
+        creator: visitor.user.email,
+        status: "Checked in",
+        date: yesterday,
+        endDate: tomorrow,
+        time: "00:00",
+        endTime: "23:59",
+        logs: [
+          { in: new Date().toISOString(), assets: "No assets", out: null },
+        ],
+      });
+      for (const actor of [visitor, staff.host, staff.planner])
+        assert.equal((await call("/overstays", undefined, actor)).status, 403);
+      let alerts = await call("/overstays", undefined, staff.security);
+      assert.equal(alerts.status, 200);
+      assert.ok(
+        alerts.data.visits.some(
+          (v) => v.id === overdue.id && v.overdueMinutes > 0
+        )
+      );
+      assert.ok(!alerts.data.visits.some((v) => v.id === current.id));
+      await Promise.all([scanOverstays(), scanOverstays()]);
+      await scanOverstays();
+      assert.equal(
+        await Notification.countDocuments({
+          recipient: staff.security.user.email,
+          visit: overdue.id,
+          kind: "overstay",
+        }),
+        1
+      );
+      assert.equal(
+        await Notification.countDocuments({
+          recipient: staff.planner.user.email,
+          visit: overdue.id,
+          kind: "overstay",
+        }),
+        0
+      );
+      const path = `/visits/${overdue.id}/actions`;
+      assert.equal(
+        (await call(path, { action: "checkout", version: 1 }, staff.security))
+          .status,
+        400
+      );
+      assert.equal(
+        (
+          await call(
+            path,
+            {
+              action: "checkout",
+              version: 1,
+              assetResult: "matched",
+              exitAuthorized: false,
+            },
+            staff.security
+          )
+        ).status,
+        400
+      );
+      assert.equal(
+        (
+          await call(
+            path,
+            {
+              action: "checkout",
+              version: 1,
+              assetResult: "discrepancy",
+              exitAuthorized: true,
+              exitAssets: "No assets",
+            },
+            staff.security
+          )
+        ).status,
+        400
+      );
+      const departure = await call(
+        path,
+        {
+          action: "checkout",
+          version: 1,
+          assetResult: "discrepancy",
+          exitAuthorized: true,
+          exitAssets: "No assets",
+          assetNotes:
+            "Laptop retained by host; serial verified and release approved.",
+        },
+        staff.security
+      );
+      assert.equal(departure.status, 200);
+      assert.equal(departure.data.visit.overstay, false);
+      const log = departure.data.visit.logs.at(-1);
+      assert.equal(log.assets, "Laptop SERIAL-1");
+      assert.equal(log.exitAssets, "No assets");
+      assert.equal(log.assetResult, "discrepancy");
+      assert.equal(log.exitVerifiedBy, staff.security.user.email);
+      assert.ok(log.out && log.exitVerifiedAt && log.assetNotes);
+      assert.equal(
+        await Notification.countDocuments({
+          recipient: admin.user.email,
+          visit: overdue.id,
+          kind: "asset-discrepancy",
+        }),
+        1
+      );
+      alerts = await call("/overstays", undefined, staff.security);
+      assert.ok(!alerts.data.visits.some((v) => v.id === overdue.id));
+      // Matching checkout takes the original entry assets; arbitrary exit text cannot overwrite them.
+      const matched = await call(
+        `/visits/${current.id}/actions`,
+        {
+          action: "checkout",
+          version: 1,
+          assetResult: "matched",
+          exitAuthorized: true,
+          exitAssets: "Forged replacement",
+        },
+        staff.security
+      );
+      assert.equal(matched.status, 200);
+      assert.equal(matched.data.visit.logs.at(-1).exitAssets, "No assets");
+    }
+  );
+  await t.test(
+    "notification read state persists and cannot be changed by another account",
+    async () => {
+      const inbox = await call("/notifications", undefined, staff.security);
+      assert.ok(inbox.data.unreadCount > 0);
+      const notice = inbox.data.notifications.find(
+        (item) => item.kind === "overstay"
+      );
+      assert.ok(notice);
+      assert.equal(
+        (await call(`/notifications/${notice._id}/read`, {}, visitor, "PATCH"))
+          .status,
+        404
+      );
+      assert.equal(
+        (
+          await call(
+            `/notifications/${notice._id}/read`,
+            {},
+            staff.security,
+            "PATCH"
+          )
+        ).status,
+        200
+      );
+      assert.equal(
+        (
+          await call(
+            `/notifications/${notice._id}/read`,
+            {},
+            staff.security,
+            "PATCH"
+          )
+        ).status,
+        200
+      );
+      const refreshed = await call("/notifications", undefined, staff.security);
+      assert.equal(refreshed.data.unreadCount, inbox.data.unreadCount - 1);
+      assert.equal(
+        refreshed.data.notifications.find((item) => item._id === notice._id)
+          .read,
+        true
+      );
+      const visitorBefore = (await call("/notifications", undefined, visitor))
+        .data.unreadCount;
+      assert.equal(
+        (await call("/notifications/read", {}, staff.security, "PATCH")).status,
+        200
+      );
+      assert.equal(
+        (await call("/notifications", undefined, staff.security)).data
+          .unreadCount,
+        0
+      );
+      assert.equal(
+        (await call("/notifications", undefined, visitor)).data.unreadCount,
+        visitorBefore
+      );
+      assert.equal(
+        (
+          await call(
+            "/notifications/not-an-id/read",
+            {},
+            staff.security,
+            "PATCH"
+          )
+        ).status,
+        404
+      );
+    }
+  );
+
+  await t.test(
+    "email outbox claims once, retries transient failures and stops after five attempts",
+    async () => {
+      const mail = await Notification.create({
+        recipient: "visitor@example.test",
+        visit: "VMS-EMAIL",
+        message: "Approved",
+        emailState: "queued",
+      });
+      let sent = 0;
+      const sender = {
+        isConfigured: () => true,
+        send: async (doc) => {
+          assert.equal(doc.recipient, "visitor@example.test");
+          sent++;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        },
+      };
+      await Promise.all([deliverEmails(sender), deliverEmails(sender)]);
+      assert.equal(sent, 1);
+      assert.equal((await Notification.findById(mail._id)).emailState, "sent");
+      const retry = await Notification.create({
+        recipient: "visitor@example.test",
+        visit: "VMS-RETRY",
+        message: "Arrival",
+        emailState: "queued",
+      });
+      const broken = {
+        isConfigured: () => true,
+        send: async () => {
+          throw new Error("provider failure containing private details");
+        },
+      };
+      await deliverEmails(broken);
+      let doc = await Notification.findById(retry._id);
+      assert.equal(doc.emailAttempts, 1);
+      assert.equal(doc.emailState, "queued");
+      assert.ok(doc.emailNextAttempt > new Date());
+      assert.ok(!doc.emailError.includes("private details"));
+      await deliverEmails(broken);
+      assert.equal((await Notification.findById(retry._id)).emailAttempts, 1);
+      for (let attempt = 2; attempt <= 5; attempt++) {
+        await Notification.updateOne(
+          { _id: retry._id },
+          { $set: { emailNextAttempt: new Date(0) } }
+        );
+        await deliverEmails(broken);
+      }
+      doc = await Notification.findById(retry._id);
+      assert.equal(doc.emailState, "failed");
+      assert.equal(doc.emailAttempts, 5);
+      await deliverEmails(broken);
+      assert.equal((await Notification.findById(retry._id)).emailAttempts, 5);
+      const abandoned = await Notification.create({
+        recipient: "visitor@example.test",
+        visit: "VMS-LEASE",
+        message: "Arrival",
+        emailState: "sending",
+        emailAttempts: 1,
+        emailLeaseUntil: new Date(0),
+      });
+      await deliverEmails(sender);
+      assert.equal(
+        (await Notification.findById(abandoned._id)).emailState,
+        "sent"
+      );
+    }
+  );
+  await t.test(
+    "SMTP requires configuration and TLS, and records provider acceptance",
+    async () => {
+      const { createMailer } = require("../src/workspace/notification-email");
+      assert.equal(createMailer({}).isConfigured(), false);
+      const env = {
+        WORKSPACE_EMAIL_ENABLED: "true",
+        WORKSPACE_SMTP_HOST: "smtp.example.test",
+        WORKSPACE_SMTP_FROM: "visits@example.test",
+        WORKSPACE_SMTP_USER: "staff",
+        WORKSPACE_SMTP_PASSWORD: "test-only-password",
+      };
+      assert.equal(
+        createMailer({ ...env, WORKSPACE_SMTP_PASSWORD: "" }).isConfigured(),
+        false
+      );
+      let options, message;
+      const mailer = createMailer(env, (config) => {
+        options = config;
+        return {
+          sendMail: async (input) => {
+            message = input;
+            return { accepted: [input.to] };
+          },
+        };
+      });
+      await mailer.send({
+        _id: "fixture",
+        recipient: "visitor@example.test",
+        visit: "VMS-MAIL",
+        message: "Visit approved",
+        kind: "approve",
+      });
+      assert.equal(options.port, 587);
+      assert.equal(options.requireTLS, true);
+      assert.equal(options.secure, false);
+      assert.equal(message.to, "visitor@example.test");
+      assert.match(message.text, /Visit approved/);
+      const tls = createMailer(
+        { ...env, WORKSPACE_SMTP_PORT: "465" },
+        (config) => {
+          assert.equal(config.secure, true);
+          return { sendMail: async () => ({ accepted: [] }) };
+        }
+      );
+      await assert.rejects(() =>
+        tls.send({
+          _id: "fixture",
+          recipient: "visitor@example.test",
+          visit: "VMS-MAIL",
+          message: "Approved",
+        })
       );
     }
   );

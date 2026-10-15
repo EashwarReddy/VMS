@@ -180,6 +180,39 @@ const fs = require("node:fs"),
   await logout();
   console.log("PASS planner saves shared arrangements");
   await login(accounts.Security.email, password);
+  await page
+    .getByRole("button", { name: "Notifications", exact: true })
+    .click();
+  await dialog()
+    .getByRole("heading", { name: /Notifications/ })
+    .waitFor();
+  assert.match(await dialog().textContent(), new RegExp(visitorName));
+  await dialog()
+    .getByRole("button", { name: "Mark all as read", exact: true })
+    .click();
+  await dialog()
+    .getByRole("article", { name: "Read notification", exact: true })
+    .filter({ hasText: visitorName })
+    .first()
+    .waitFor();
+  await dialog()
+    .getByRole("article")
+    .filter({ hasText: visitorName })
+    .first()
+    .getByRole("button", { name: "View visit", exact: true })
+    .click();
+  await page
+    .getByRole("heading", { name: /Notifications/ })
+    .waitFor({ state: "hidden" });
+  await dialog()
+    .getByRole("heading", { name: /Visit details/ })
+    .waitFor();
+  assert.match(await dialog().textContent(), new RegExp(visitorName));
+  await dialog()
+    .getByRole("button", { name: "Close visit details", exact: true })
+    .click();
+  console.log("PASS notification inbox, read controls and opening the visit");
+
   assert.equal(
     await navigation()
       .getByRole("button", { name: "Travel & Accommodation", exact: true })
@@ -257,7 +290,35 @@ const fs = require("node:fs"),
   await dialog()
     .getByRole("button", { name: "Close arrival scanner", exact: true })
     .click();
+  // Only mutate the fixture created by this test, to exercise a genuine overdue visitor.
+  const mongoose = require("../../BE/node_modules/mongoose");
+  const { Visit } = require("../../BE/src/workspace/server");
+  await mongoose.connect(
+    config.WORKSPACE_MONGODB_URI || "mongodb://127.0.0.1:27017/vms_workspace"
+  );
+  const yesterday = new Date(Date.now() - 86400000).toLocaleDateString(
+    "en-CA",
+    { timeZone: "Asia/Kolkata" }
+  );
+  try {
+    const changed = await Visit.updateOne(
+      { name: visitorName, creator: accounts.Visitor.email },
+      { $set: { date: yesterday, endDate: yesterday } }
+    );
+    assert.equal(changed.modifiedCount, 1);
+  } finally {
+    await mongoose.disconnect();
+  }
+  await page.reload({ waitUntil: "networkidle" });
+  await navigation()
+    .getByRole("button", { name: "Movement History", exact: true })
+    .click();
+  await page
+    .getByRole("region", { name: "Overstay alerts" })
+    .getByRole("button", { name: new RegExp(visitorName) })
+    .waitFor();
   await openVisit();
+  assert.match(await dialog().textContent(), /Overstay:/);
   assert.equal(
     await dialog()
       .getByRole("region", { name: "Travel & Accommodation module" })
@@ -268,9 +329,28 @@ const fs = require("node:fs"),
   await dialog()
     .getByRole("button", { name: "Record check-out", exact: true })
     .click();
+  await dialog().getByLabel("Asset comparison").selectOption("discrepancy");
+  await dialog()
+    .getByLabel("Outgoing asset details")
+    .fill("Laptop TEST-1 and charger");
+  await dialog()
+    .getByLabel("Discrepancy resolution")
+    .fill("Charger reviewed with the host; departure authorized.");
+  await dialog()
+    .getByLabel("Outgoing assets checked and departure authorized")
+    .check();
+  await dialog()
+    .getByRole("button", {
+      name: "Verify assets & record departure",
+      exact: true,
+    })
+    .click();
   await dialog()
     .getByRole("button", { name: "Finish visit", exact: true })
     .waitFor();
+  assert.match(await dialog().textContent(), /Discrepancy reviewed/);
+  assert.match(await dialog().textContent(), /Laptop TEST-1 and charger/);
+
   await dialog()
     .getByRole("button", { name: "Finish visit", exact: true })
     .click();

@@ -1904,3 +1904,47 @@
     flex-wrap: wrap;
   }
 }
+
+.notificationCard {
+  padding: 16px 0;
+  border-bottom: 1px solid #e4e8ee;
+}
+.notificationCard p {
+  line-height: 1.6;
+  margin: 8px 0;
+}
+.notificationCard small {
+  color: #667085;
+}
+.overstayBanner {
+  padding: 20px;
+  margin-bottom: 20px;
+  background: #fff4ed;
+  border: 1px solid #f9b28b;
+  border-radius: 16px;
+}
+.overstayBanner h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  color: #9c2a10;
+}
+.overstayBanner p {
+  line-height: 1.6;
+}
+.overstayBanner button {
+  margin: 6px 8px 0 0;
+}
+
+.notificationCard,
+.movement {
+  overflow-wrap: anywhere;
+}
+.movement > span {
+  min-width: 0;
+}
+.overstayBanner button {
+  white-space: normal;
+  text-align: left;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}

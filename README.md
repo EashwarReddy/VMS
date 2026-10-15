@@ -44,14 +44,45 @@ Do not rerun account setup or delete the database volume for this update. With t
 3. As an Admin or Planner, open **Travel & Accommodation** and save the approved visitor's transport and accommodation details.
 4. The requester can track the visit and copy the approved QR pass from the visit details.
 5. As Security, open **Movement History → Scan visitor QR**. Scan using the camera, upload a QR image, or use a USB reader. Verify the authorized visitor, confirm photo identification, and record asset details (or explicitly select no assets) before allowing entry.
-6. Record departure, repeated entries if needed during the scheduled window, and visit completion.
+6. In Movement History, choose **Record check-out**. Compare outgoing assets against the entry record, confirm departure authorization, and submit **Verify assets & record departure**. For discrepancies, record outgoing assets and the resolution. Repeated entries remain available during the scheduled window.
 7. Visitors see their own history and arrangements; administrators see campus statistics, account access, and audit records.
 
 Use distinct browser profiles or an incognito window to test different roles at the same time. Roles are assigned by the administrator and enforced by the server; users cannot switch privileges through a dropdown. The separate `/workspace` page remains a clearly labeled sample design preview.
 
-Multi-day visits are supported. Walk-ins are limited to the same day, cannot request travel/stay, and require host approval before entry. Revoked or completed passes cannot be used. In-app notifications are stored in the database. Email delivery and automated face recognition are **not configured**; they need an email provider and a compatible recognition service/device. Security confirms identity manually. Camera scanning requires browser permission and localhost or HTTPS; QR image upload and USB scanner input are available as alternatives.
+Multi-day visits are supported. Walk-ins are limited to the same day, cannot request travel/stay, and require host approval before entry. Revoked or completed passes cannot be used. In-app notifications are stored in the database. Email delivery is optional and requires the SMTP settings below. Automated face recognition is **not configured** and needs a compatible recognition service/device. Security confirms identity manually. Camera scanning requires browser permission and localhost or HTTPS; QR image upload and USB scanner input are available as alternatives.
 
 **Travel & Accommodation** is managed only by Admin and Planner. **Movement History** is managed by Security, with Admin oversight, and contains entry/departure records and assets. The server rejects unauthorized module access and checks the QR pass, scheduled visit window, revocation status, and asset record again when admitting a visitor.
+
+## Notifications, overstays and asset checkout
+
+Use the bell icon to open your personal notification inbox. It refreshes with the workspace every 15 seconds, shows unread updates, and supports marking individual notifications or all notifications as read. **View visit** opens the relevant record. Requesters and assigned hosts receive visit updates; Security receives arrival/departure alerts, and Planners receive approvals requiring travel or accommodation. Administrators and Security also receive overstay and asset-discrepancy alerts.
+
+An overstay starts when a checked-in visitor passes the final scheduled departure date and time in **Asia/Kolkata (IST)**. Security and Admin see overdue visitors in **Movement History**. The server checks once per minute and creates one alert per entry and recipient; checkout clears the active alert while preserving its notification history. Multi-day visitors are assessed against the final departure, rather than each midnight. Keep the app container running for background email and overstay checks.
+
+Every checkout now requires an asset comparison and explicit departure authorization. Matching assets retain the entry asset description. For a discrepancy, Security records outgoing assets and the resolution before authorizing departure; the original entry record, resolution, officer, and verification time remain in Movement History. Admin and Security receive a discrepancy notification. Older records remain readable and show that exit verification was not recorded.
+
+### Enable email on your computer
+
+Add these settings to your existing **`BE/.workspace.env`**. Keep this file private and out of Git. Obtain the values from your organization's mail administrator or mail provider; use an app password if your provider requires one.
+
+```dotenv
+WORKSPACE_EMAIL_ENABLED=true
+WORKSPACE_SMTP_HOST=smtp.your-provider.com
+WORKSPACE_SMTP_PORT=587
+WORKSPACE_SMTP_FROM=visits@your-domain.com
+WORKSPACE_SMTP_USER=your-smtp-username
+WORKSPACE_SMTP_PASSWORD=your-smtp-password
+```
+
+Port **587** requires STARTTLS; port **465** uses TLS immediately. Certificate verification remains enabled. Both SMTP username and password are required together; an authenticated corporate relay can omit both if it permits sending without login.
+
+Apply changes with your existing Compose project name:
+
+```powershell
+docker compose -p vms-modern-vms-app up -d --force-recreate --no-deps app
+```
+
+New notifications will be queued for email when the configuration is complete. Delivery is checked every 15 seconds, with up to five attempts and increasing delays after failures. The inbox shows whether the provider accepted an email or delivery failed. Provider acceptance does not guarantee inbox delivery; verify a test with your provider and check spam folders. Notifications created while email was disabled are not emailed retroactively. In-app notifications continue to work without SMTP.
 
 ## Run without the application container
 

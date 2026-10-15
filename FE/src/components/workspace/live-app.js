@@ -11,6 +11,7 @@ import {
 import { Building2, ArrowRight, ShieldCheck } from "lucide-react";
 import Workspace from "./workspace";
 import ArrivalScanner from "./arrival-scanner";
+import NotificationInbox from "./notification-inbox";
 import styles from "./workspace.module.css";
 
 export default function LiveApp() {
@@ -25,6 +26,14 @@ export default function LiveApp() {
   const [users, setUsers] = useState([]);
   const [events, setEvents] = useState([]);
   const [updates, setUpdates] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [emailDelivery, setEmailDelivery] = useState({
+    enabled: false,
+    configured: false,
+  });
+  const [inbox, setInbox] = useState(false);
+  const [inboxError, setInboxError] = useState("");
+  const [notificationVisit, setNotificationVisit] = useState(null);
   const [message, setMessage] = useState("");
   const [arrival, setArrival] = useState(false);
   const csrf = useRef("");
@@ -53,15 +62,22 @@ export default function LiveApp() {
       throw new Error(result.message || "The request could not be completed.");
     return result;
   }, []);
+  const refreshNotifications = useCallback(async () => {
+    const result = await request("/notifications");
+    setUpdates(result.notifications);
+    setUnreadCount(result.unreadCount);
+    setEmailDelivery(result.emailDelivery);
+  }, [request]);
   const reload = useCallback(async () => {
     const [result, directory] = await Promise.all([
       request("/visits"),
       request("/hosts"),
+      refreshNotifications(),
     ]);
     setVisits(result.visits);
     setHosts(directory.hosts);
     return result;
-  }, [request]);
+  }, [request, refreshNotifications]);
   useEffect(() => {
     let active = true;
     request("/auth/me")
@@ -123,6 +139,10 @@ export default function LiveApp() {
       csrf.current = "";
       setUser(null);
       setVisits([]);
+      setUpdates([]);
+      setUnreadCount(0);
+      setInbox(false);
+      setNotificationVisit(null);
     } catch (e) {
       setError(e.message);
     }
@@ -182,6 +202,27 @@ export default function LiveApp() {
       setMessage(e.message);
     } finally {
       setBusy(false);
+    }
+  };
+  const openInbox = async () => {
+    setInbox(true);
+    setInboxError("");
+    try {
+      await refreshNotifications();
+    } catch (error) {
+      setInboxError(error.message);
+    }
+  };
+  const readNotification = async (id) => {
+    try {
+      await request(
+        id ? `/notifications/${id}/read` : "/notifications/read",
+        {},
+        "PATCH"
+      );
+      await refreshNotifications();
+    } catch (error) {
+      setInboxError(error.message);
     }
   };
   const verifyArrival = (code) => request("/verify-pass", { qr: code });
@@ -311,6 +352,28 @@ export default function LiveApp() {
           onTools: openTools,
           onArrival: () => setArrival(true),
           loadModule,
+          unreadCount,
+          onNotifications: openInbox,
+          notificationVisit,
+        }}
+      />
+      <NotificationInbox
+        open={inbox}
+        onClose={() => setInbox(false)}
+        updates={updates}
+        unreadCount={unreadCount}
+        emailDelivery={emailDelivery}
+        error={inboxError}
+        onRead={readNotification}
+        onReadAll={() => readNotification()}
+        onVisit={(update) => {
+          if (!visits.some((visit) => visit.id === update.visit)) {
+            setInboxError("This visit is no longer available to your account.");
+            return;
+          }
+          readNotification(update._id);
+          setNotificationVisit({ id: update.visit, key: Date.now() });
+          setInbox(false);
         }}
       />
       <ArrivalScanner

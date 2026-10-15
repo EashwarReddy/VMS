@@ -9,6 +9,7 @@ require("dotenv").config({
   path: path.join(__dirname, "../../.workspace.env"),
 });
 
+const mailer = require("./notification-email").createMailer();
 const scrypt = promisify(crypto.scrypt);
 const ROLES = ["Admin", "Visitor", "Host", "Planner", "Security"];
 const cookieName = "vms_session";
@@ -59,7 +60,18 @@ const Visit = mongoose.model(
     status: String,
     version: { type: Number, default: 1 },
     plan: { vehicle: String, pickup: String, stay: String },
-    logs: [{ in: String, out: String, assets: String }],
+    logs: [
+      {
+        in: String,
+        out: String,
+        assets: String,
+        exitAssets: String,
+        assetResult: String,
+        assetNotes: String,
+        exitVerifiedBy: String,
+        exitVerifiedAt: String,
+      },
+    ],
     passHash: String,
     passToken: String,
   })
@@ -71,10 +83,22 @@ const Audit = mongoose.model(
 const Notification = mongoose.model(
   "WorkspaceNotification",
   schema({
+    eventKey: { type: String, unique: true, sparse: true },
+    kind: String,
     recipient: String,
     message: String,
     visit: String,
     read: { type: Boolean, default: false },
+    emailState: {
+      type: String,
+      enum: ["disabled", "queued", "sending", "sent", "failed"],
+      default: () => (mailer.isConfigured() ? "queued" : "disabled"),
+    },
+    emailAttempts: { type: Number, default: 0 },
+    emailNextAttempt: Date,
+    emailLeaseUntil: Date,
+    emailSentAt: Date,
+    emailError: String,
   })
 );
 const asyncRoute = (fn) => (req, res, next) =>
@@ -144,7 +168,157 @@ function visitView(doc) {
   delete v.__v;
   delete v.passHash;
   delete v.passToken;
+  const deadline = Date.parse(`${v.endDate || v.date}T${v.endTime}:00+05:30`);
+  v.overstay =
+    v.status === "Checked in" &&
+    Number.isFinite(deadline) &&
+    Date.now() > deadline;
+  v.overdueMinutes = v.overstay
+    ? Math.ceil((Date.now() - deadline) / 60000)
+    : 0;
   return v;
+}
+async function notifyPeople(visit, kind, message, eventKey) {
+  const roles =
+    kind === "overstay" || kind === "asset-discrepancy"
+      ? ["Admin", "Security"]
+      : kind === "approve" && (visit.transport || visit.accommodation)
+        ? ["Admin", "Planner", "Security"]
+        : ["checkin", "checkout"].includes(kind)
+          ? ["Admin", "Security"]
+          : [];
+  const staff = roles.length
+    ? await Account.find({ active: true, role: { $in: roles } }).select("email")
+    : [];
+  const recipients = new Set(
+    [
+      visit.creator,
+      visit.hostEmail,
+      ...staff.map((account) => account.email),
+    ].filter(Boolean)
+  );
+  await Promise.all(
+    [...recipients].map(async (recipient) => {
+      const key = `${eventKey}:${recipient}`;
+      try {
+        await Notification.updateOne(
+          { eventKey: key },
+          {
+            $setOnInsert: {
+              eventKey: key,
+              recipient,
+              kind,
+              message,
+              visit: visit.id,
+              read: false,
+            },
+          },
+          { upsert: true }
+        );
+      } catch (error) {
+        if (error.code !== 11000) throw error;
+      }
+    })
+  );
+}
+let scanningOverstays = false;
+async function scanOverstays() {
+  if (scanningOverstays) return;
+  scanningOverstays = true;
+  try {
+    const visits = await Visit.find({ status: "Checked in" });
+    for (const visit of visits) {
+      if (!visitView(visit).overstay) continue;
+      const entry = visit.logs.at(-1);
+      await notifyPeople(
+        visit,
+        "overstay",
+        `${visit.name} is still on campus after the scheduled departure (${visit.endDate || visit.date} ${visit.endTime} IST).`,
+        `overstay:${visit.id}:${entry?._id || entry?.in}`
+      );
+    }
+  } finally {
+    scanningOverstays = false;
+  }
+}
+async function deliverEmails(sender = mailer) {
+  if (!sender.isConfigured()) return;
+  for (let i = 0; i < 10; i++) {
+    const now = new Date();
+    const notification = await Notification.findOneAndUpdate(
+      {
+        emailAttempts: { $lt: 5 },
+        $or: [
+          {
+            emailState: "queued",
+            $or: [
+              { emailNextAttempt: { $exists: false } },
+              { emailNextAttempt: { $lte: now } },
+            ],
+          },
+          { emailState: "sending", emailLeaseUntil: { $lte: now } },
+        ],
+      },
+      {
+        $set: {
+          emailState: "sending",
+          emailLeaseUntil: new Date(Date.now() + 120000),
+        },
+        $inc: { emailAttempts: 1 },
+      },
+      { new: true, sort: { createdAt: 1 } }
+    );
+    if (!notification) break;
+    try {
+      await sender.send(notification);
+      await Notification.updateOne(
+        {
+          _id: notification._id,
+          emailState: "sending",
+          emailAttempts: notification.emailAttempts,
+        },
+        {
+          $set: { emailState: "sent", emailSentAt: new Date() },
+          $unset: { emailLeaseUntil: 1, emailError: 1 },
+        }
+      );
+    } catch {
+      await Notification.updateOne(
+        {
+          _id: notification._id,
+          emailState: "sending",
+          emailAttempts: notification.emailAttempts,
+        },
+        {
+          $set: {
+            emailState: notification.emailAttempts >= 5 ? "failed" : "queued",
+            emailNextAttempt: new Date(
+              Date.now() + Math.min(60, 2 ** notification.emailAttempts) * 60000
+            ),
+            emailError:
+              "Email delivery failed. Check the SMTP settings and provider.",
+          },
+          $unset: { emailLeaseUntil: 1 },
+        }
+      );
+    }
+  }
+  // A worker interrupted during its last attempt must not leave a permanent sending status.
+  await Notification.updateMany(
+    {
+      emailState: "sending",
+      emailAttempts: { $gte: 5 },
+      emailLeaseUntil: { $lte: new Date() },
+    },
+    {
+      $set: {
+        emailState: "failed",
+        emailError:
+          "Email delivery could not be confirmed after five attempts.",
+      },
+      $unset: { emailLeaseUntil: 1 },
+    }
+  );
 }
 function arrivalWindow(visit) {
   const day = dateInIndia();
@@ -615,11 +789,48 @@ api.post(
     } else if (action === "checkout") {
       allowed(["Admin", "Security"]);
       status(["Checked in"]);
+      const { assetResult, exitAssets, assetNotes, exitAuthorized } = req.body;
+      if (
+        !["matched", "discrepancy"].includes(assetResult) ||
+        exitAuthorized !== true
+      )
+        fail(
+          400,
+          "Verify the outgoing assets and authorize departure before checkout."
+        );
+      if (
+        assetResult === "discrepancy" &&
+        (typeof exitAssets !== "string" ||
+          !exitAssets.trim() ||
+          exitAssets.trim().length > 300 ||
+          typeof assetNotes !== "string" ||
+          !assetNotes.trim() ||
+          assetNotes.trim().length > 500)
+      )
+        fail(
+          400,
+          "Record outgoing assets and the discrepancy resolution (up to 500 characters)."
+        );
+      const last = v.logs.at(-1);
+      if (!last || last.out)
+        fail(409, "No active entry is available for checkout.");
+      const verifiedAt = new Date().toISOString();
       changes.status = "Approved";
-      changes.logs = v.logs.map((log, i) => ({
-        ...log.toObject(),
-        out: i === v.logs.length - 1 ? new Date().toISOString() : log.out,
-      }));
+      changes.logs = v.logs.map((log, i) =>
+        i === v.logs.length - 1
+          ? {
+              ...log.toObject(),
+              out: verifiedAt,
+              exitVerifiedAt: verifiedAt,
+              exitVerifiedBy: req.user.email,
+              assetResult,
+              exitAssets:
+                assetResult === "matched" ? log.assets : exitAssets.trim(),
+              assetNotes:
+                assetResult === "discrepancy" ? assetNotes.trim() : "",
+            }
+          : log.toObject()
+      );
     } else if (action === "complete") {
       allowed(["Admin", "Security"]);
       status(["Approved"]);
@@ -636,11 +847,28 @@ api.post(
     );
     if (!updated) fail(409, "This visit changed. Refresh and try again.");
     await Audit.create({ actor: req.user.email, action, visit: v.id });
-    await Notification.create({
-      recipient: v.creator,
-      message: `Visit ${v.id}: ${action === "plan" ? "travel arrangements updated" : updated.status.toLowerCase()}.`,
-      visit: v.id,
-    });
+    const label = {
+      approve: "approved; your QR pass is ready",
+      decline: "declined",
+      cancel: "cancelled",
+      plan: "travel arrangements updated",
+      checkin: "arrived on campus",
+      checkout: "departed campus; assets verified",
+      complete: "completed",
+    }[action];
+    await notifyPeople(
+      updated,
+      action,
+      `${updated.name}: visit ${updated.id} ${label}.`,
+      `visit:${updated.id}:${updated.version}`
+    );
+    if (action === "checkout" && req.body.assetResult === "discrepancy")
+      await notifyPeople(
+        updated,
+        "asset-discrepancy",
+        `${updated.name}: an asset discrepancy was reviewed and departure authorized by ${req.user.email}. See Movement History for the recorded resolution.`,
+        `asset-discrepancy:${updated.id}:${updated.version}`
+      );
     res.json({ visit: visitView(updated) });
   })
 );
@@ -683,12 +911,58 @@ api.get(
   "/notifications",
   asyncRoute(async (req, res) =>
     res.json({
+      emailDelivery: {
+        enabled: mailer.enabled,
+        configured: mailer.isConfigured(),
+      },
+      unreadCount: await Notification.countDocuments({
+        recipient: req.user.email,
+        read: false,
+      }),
       notifications: await Notification.find({ recipient: req.user.email })
         .sort({ createdAt: -1 })
         .limit(30)
         .lean(),
     })
   )
+);
+api.patch(
+  "/notifications/read",
+  asyncRoute(async (req, res) => {
+    await Notification.updateMany(
+      { recipient: req.user.email, read: false },
+      { $set: { read: true } }
+    );
+    res.json({ ok: true });
+  })
+);
+api.patch(
+  "/notifications/:id/read",
+  asyncRoute(async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id))
+      fail(404, "Notification not found.");
+    const update = await Notification.findOneAndUpdate(
+      { _id: req.params.id, recipient: req.user.email },
+      { $set: { read: true } },
+      { new: true }
+    );
+    if (!update) fail(404, "Notification not found.");
+    res.json({ notification: update });
+  })
+);
+api.get(
+  "/overstays",
+  asyncRoute(async (req, res) => {
+    if (!["Admin", "Security"].includes(req.user.role))
+      fail(403, "Security or administrator access required.");
+    const visits = await Visit.find({ status: "Checked in" }).sort({
+      date: 1,
+      endTime: 1,
+    });
+    res.json({
+      visits: visits.map(visitView).filter((visit) => visit.overstay),
+    });
+  })
 );
 api.get(
   "/audit",
@@ -718,7 +992,12 @@ async function start() {
     process.env.WORKSPACE_MONGODB_URI ||
       "mongodb://127.0.0.1:27017/vms_workspace"
   );
-  await Promise.all([Account.init(), Session.init(), Visit.init()]);
+  await Promise.all([
+    Account.init(),
+    Session.init(),
+    Visit.init(),
+    Notification.init(),
+  ]);
   const adminPassword = process.env.WORKSPACE_ADMIN_PASSWORD_B64
     ? Buffer.from(process.env.WORKSPACE_ADMIN_PASSWORD_B64, "base64").toString(
         "utf8"
@@ -743,8 +1022,37 @@ async function start() {
     process.env.WORKSPACE_HOST || "127.0.0.1",
     () => console.log("Workspace API ready.")
   );
-  const shutdown = () =>
+  const monitor = setInterval(
+    () =>
+      scanOverstays().catch(() =>
+        console.error("Overstay monitoring failed; it will retry.")
+      ),
+    60000
+  );
+  const emailMonitor = setInterval(
+    () =>
+      deliverEmails().catch(() =>
+        console.error("Email delivery worker failed; it will retry.")
+      ),
+    15000
+  );
+  emailMonitor.unref();
+  deliverEmails().catch(() =>
+    console.error("Initial email delivery failed; it will retry.")
+  );
+  monitor.unref();
+  scanOverstays().catch(() =>
+    console.error("Initial overstay scan failed; it will retry.")
+  );
+  server.on("close", () => {
+    clearInterval(monitor);
+    clearInterval(emailMonitor);
+  });
+  const shutdown = () => {
+    clearInterval(monitor);
+    clearInterval(emailMonitor);
     server.close(() => mongoose.disconnect().then(() => process.exit(0)));
+  };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
   return server;
@@ -756,4 +1064,14 @@ if (require.main === module)
     );
     process.exit(1);
   });
-module.exports = { app, start, Account, Visit, Session, Audit };
+module.exports = {
+  app,
+  start,
+  Account,
+  Visit,
+  Session,
+  Audit,
+  Notification,
+  scanOverstays,
+  deliverEmails,
+};
